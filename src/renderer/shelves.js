@@ -1,6 +1,6 @@
 'use strict';
 
-/* global api, state, el, $, bookCard, onCardIds, queuedIds, applyFilters, ratingScore, SORTERS, showError */
+/* global api, state, el, $, bookCard, onCardIds, queuedIds, applyFilters, ratingScore, SORTERS, showError, toast */
 
 // =========================================================================
 // Browse "Home": genre chips and shelves (rows of books).
@@ -140,8 +140,74 @@ function openSettings() {
         ['standard', 'Standard (recommended): smaller files, great for spoken word'],
         ['high', 'High: about twice the size'],
       ], (v) => save({ quality: v })),
-      el('p', { class: 'hint' }, 'You can also choose the quality for each book in its details.')),
+      el('p', { class: 'hint' }, 'You can also choose the quality for each book in its details.'),
+
+      el('h3', {}, 'About & updates'),
+      el('div', { id: 'updateStatus', class: 'update-status' })),
     el('div', { class: 'dialog-foot' }, el('button', { class: 'btn btn-primary', onclick: () => dlg.close() }, 'Done'))
   );
+  renderUpdateStatus();
   dlg.showModal();
+}
+
+// =========================================================================
+// App updates (see src/main/updater.js)
+// =========================================================================
+
+function updateText(u) {
+  switch (u?.state) {
+    case 'dev': return 'Running from source code, so updates are not checked.';
+    case 'checking': return 'Checking for updates…';
+    case 'current': return 'You have the latest version.';
+    case 'available': return `Version ${u.version} is available.`;
+    case 'downloading': return `Downloading version ${u.version || ''}… ${u.percent || 0}%`;
+    case 'ready': return `Version ${u.version} is ready to install.`;
+    case 'error': return u.error;
+    default: return '';
+  }
+}
+
+async function installUpdate() {
+  try {
+    const restarting = await api.updates.install();
+    if (!restarting) toast('The download page has opened in your web browser. Install the new version from there.');
+  } catch (err) {
+    showError(err);
+  }
+}
+
+function renderUpdateStatus() {
+  const box = $('#updateStatus');
+  if (!box) return;
+  const u = state.update || {};
+  const action =
+    u.state === 'ready' ? el('button', { class: 'btn btn-primary btn-small', onclick: installUpdate }, 'Restart to update')
+      : u.state === 'available' ? el('button', { class: 'btn btn-primary btn-small', onclick: installUpdate }, 'Download update')
+        : u.state !== 'dev' ? el('button', { class: 'btn btn-secondary btn-small', disabled: ['checking', 'downloading'].includes(u.state), onclick: () => api.updates.check() }, 'Check for updates')
+          : null;
+  box.replaceChildren(
+    el('div', {}, el('strong', {}, `Audiobook SD Loader ${u.current || ''}`)),
+    el('div', { class: 'muted' }, updateText(u)),
+    u.state === 'available' && !u.selfUpdate
+      ? el('p', { class: 'hint' }, 'This copy can\u2019t install updates by itself, so the download page will open in your browser.')
+      : null,
+    action
+  );
+}
+
+function renderUpdateBanner() {
+  const b = $('#updateBanner');
+  const u = state.update || {};
+  if (!['available', 'downloading', 'ready'].includes(u.state)) {
+    b.hidden = true;
+    return;
+  }
+  b.hidden = false;
+  const label = u.state === 'ready' ? `Version ${u.version} is ready` : u.state === 'downloading' ? `Updating… ${u.percent || 0}%` : `Version ${u.version} is out`;
+  b.replaceChildren(
+    el('span', { class: 'update-text' }, label),
+    u.state === 'downloading'
+      ? null
+      : el('button', { class: 'btn btn-primary btn-small', onclick: installUpdate }, u.state === 'ready' ? 'Restart' : 'Download')
+  );
 }

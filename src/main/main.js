@@ -13,6 +13,7 @@ const local = require('./local');
 const libstate = require('./libstate');
 const media = require('./media');
 const verify = require('./verify');
+const updater = require('./updater');
 
 // "Check books" results per card: mount -> Map(folder -> result)
 const checks = new Map();
@@ -296,6 +297,15 @@ function registerIpc() {
     return media.open(source);
   });
 
+  handle('update:status', () => updater.getStatus());
+  handle('update:check', () => updater.check());
+  handle('update:install', () => {
+    if (updater.getStatus().state === 'ready' && downloader.isBusy()) {
+      throw new Error('Please wait until the books have finished downloading and copying, then restart to update.');
+    }
+    return updater.install();
+  });
+
   handle('downloads:setAutoEject', (v) => {
     autoEject = !!v;
     return autoEject;
@@ -416,6 +426,7 @@ app.whenReady().then(() => {
   registerIpc();
   createWindow();
   pollDrives(true);
+  updater.init((status) => send('update:changed', status));
   setInterval(() => pollDrives(false).catch(() => {}), process.platform === 'win32' ? 5000 : 3000);
 
   app.on('activate', () => {

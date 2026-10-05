@@ -100,6 +100,33 @@ notarize it (Apple Developer Program), and sign the Windows build with a code-si
 certificate. electron-builder supports both through environment variables
 (`CSC_LINK`/`CSC_KEY_PASSWORD`, `APPLE_ID`/`APPLE_APP_SPECIFIC_PASSWORD`/`APPLE_TEAM_ID`).
 
+## Releasing an update
+
+The app checks [GitHub Releases](https://github.com/Hypnopompia/AudioBookDownloader/releases)
+for new versions 10 seconds after it starts and then every 6 hours (Settings → About & updates
+also has a "Check for updates" button).
+
+- **Windows installer / Linux AppImage**: the update downloads in the background; the user
+  clicks **Restart** (or it installs the next time the app is quit).
+- **macOS and the Windows portable .exe**: the app says a new version is out and **Download**
+  opens the release page. (macOS only lets apps replace themselves when they are signed with a
+  Developer ID; once the Mac build is signed and notarized, it switches to full self-updating
+  automatically.)
+
+To publish a release:
+
+1. Bump `"version"` in `package.json` (e.g. `1.1.0` → `1.2.0`) and commit.
+2. Build and upload (needs a GitHub token with `repo` access; the `gh` CLI can provide one):
+
+   ```bash
+   GH_TOKEN=$(gh auth token) npm run release
+   ```
+
+   This builds the Mac and Windows installers and publishes them as release `v<version>`,
+   along with the `latest.yml` / `latest-mac.yml` files the updater reads.
+
+Builds from before v1.1.0 don't include the updater, so they need to be replaced by hand once.
+
 ## App icon
 
 The icon source is `build/icon.svg`. After editing it, regenerate the PNGs with:

@@ -73,5 +73,11 @@ contextBridge.exposeInMainWorld('api', {
   player: {
     open: (source) => call('player:open', source),
   },
+  updates: {
+    status: () => call('update:status'),
+    check: () => call('update:check'),
+    install: () => call('update:install'),
+    onChange: (cb) => on('update:changed', cb),
+  },
   onNotice: (cb) => on('app:notice', cb),
 });

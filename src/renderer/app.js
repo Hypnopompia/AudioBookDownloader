@@ -1513,6 +1513,13 @@ async function init() {
   refreshLocal();
   state.sources = await api.catalog.sources();
   state.genres = await api.catalog.genres();
+  state.update = await api.updates.status();
+  renderUpdateBanner();
+  api.updates.onChange((s) => {
+    state.update = s;
+    renderUpdateBanner();
+    if ($('#settingsDialog').open) renderUpdateStatus();
+  });
   $('#settingsBtn').addEventListener('click', openSettings);
   renderSources();
   renderDrivePanel();

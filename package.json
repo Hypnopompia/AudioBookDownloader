@@ -1,7 +1,7 @@
 {
   "name": "audiobook-sd-loader",
   "productName": "Audiobook SD Loader",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Browse free audiobooks and copy them to an SD card in the right play order.",
   "main": "src/main/main.js",
   "author": "TJ Hunter",
@@ -10,10 +10,11 @@
   "scripts": {
     "start": "electron .",
     "test": "node --test test/*.test.js",
-    "dist": "electron-builder --mac --win",
-    "dist:mac": "electron-builder --mac",
-    "dist:win": "electron-builder --win",
-    "dist:linux": "electron-builder --linux"
+    "dist": "electron-builder --mac --win --publish never",
+    "dist:mac": "electron-builder --mac --publish never",
+    "dist:win": "electron-builder --win --publish never",
+    "dist:linux": "electron-builder --linux --publish never",
+    "release": "electron-builder --mac --win --publish always"
   },
   "build": {
     "appId": "com.tjhunter.audiobooksdloader",
@@ -26,6 +27,12 @@
       "target": [
         {
           "target": "dmg",
+          "arch": [
+            "universal"
+          ]
+        },
+        {
+          "target": "zip",
           "arch": [
             "universal"
           ]
@@ -69,10 +76,21 @@
         }
       ],
       "category": "Audio"
-    }
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "Hypnopompia",
+        "repo": "AudioBookDownloader",
+        "releaseType": "release"
+      }
+    ]
   },
   "devDependencies": {
     "electron": "^44.5.1",
     "electron-builder": "^26.15.3"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
   }
 }
