@@ -506,8 +506,8 @@ body:has(#player:not([hidden])) .toasts { bottom: 110px; }
 .order-select { padding: 5px 8px; font-size: 14px; }
 
 /* ---------------------------------------------------------------- source tabs */
-.sources { display: flex; flex-wrap: wrap; gap: 8px 22px; }
-.source-group { display: flex; flex-wrap: wrap; gap: 6px; }
+.sources { display: flex; flex-wrap: wrap; gap: 8px; }
+.source-group { display: flex; flex-wrap: wrap; gap: 8px; } /* groups wrap together; same spacing as between groups */
 .source {
   position: relative; display: inline-flex; align-items: center; gap: 8px; white-space: nowrap;
   padding: 5px 14px 5px 5px; border-radius: 999px; font-size: 15px;
