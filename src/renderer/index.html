@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; img-src 'self' data: https://archive.org https://*.archive.org; style-src 'self'; script-src 'self'; media-src abook:; connect-src 'none'" />
+  <title>Audiobook SD Loader</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 13a8 8 0 0 1 16 0v5a2 2 0 0 1-2 2h-1a1 1 0 0 1-1-1v-5a1 1 0 0 1 1-1h2v-0a6 6 0 0 0-12 0v0h2a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1H6a2 2 0 0 1-2-2z"/></svg>
+        <div>
+          <div class="brand-name">Audiobook SD Loader</div>
+          <div class="brand-sub">Free audiobooks</div>
+        </div>
+      </div>
+
+      <section class="panel" id="cardPanel" aria-labelledby="cardPanelTitle">
+        <h2 id="cardPanelTitle">SD card</h2>
+        <div id="driveArea"></div>
+        <div id="usage"></div>
+        <div class="panel-actions">
+          <button class="btn btn-secondary btn-block" id="ejectBtn" hidden>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5l7 8H5zM5 16h14v3H5z"/></svg>
+            Eject SD card
+          </button>
+        </div>
+      </section>
+
+      <nav class="tabs" aria-label="Sections">
+        <button class="tab active" data-view="browse">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 4a6 6 0 1 1 0 12 6 6 0 0 1 0-12zm0 2a4 4 0 1 0 0 8 4 4 0 0 0 0-8zm5.3 9.9 4.4 4.4-1.4 1.4-4.4-4.4z"/></svg>
+          <span>Find audiobooks</span>
+        </button>
+        <button class="tab" data-view="starred">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 17.3 5.8 21l1.6-7L2 9.2l7.2-.6L12 2l2.8 6.6 7.2.6-5.4 4.8 1.6 7z"/></svg>
+          <span>Starred</span>
+          <span class="tab-count" id="starCount"></span>
+        </button>
+        <button class="tab" data-view="card">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 2h9a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V7zm1 2v4h2V4zm3 0v4h2V4zm3 0v4h2V4z"/></svg>
+          <span>On the SD card</span>
+          <span class="tab-count" id="cardCount"></span>
+        </button>
+        <button class="tab" data-view="library">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 3h3v18H4zm5 0h3v18H9zm5.2 1.1 2.9-.8 4.7 17.4-2.9.8z"/></svg>
+          <span>My library</span>
+          <span class="tab-count" id="libCount"></span>
+        </button>
+        <button class="tab" data-view="downloads">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 3h2v9l3.3-3.3 1.4 1.4L12 15.8 6.3 10.1l1.4-1.4L11 12zM4 18h16v2H4z"/></svg>
+          <span>Downloads</span>
+          <span class="tab-count" id="dlCount"></span>
+        </button>
+      </nav>
+
+      <div id="miniProgress" class="mini-progress" hidden></div>
+    </aside>
+
+    <main class="main">
+      <!-- ============================== Browse -->
+      <section class="view" id="view-browse">
+        <header class="toolbar">
+          <div class="sources" id="sources" role="tablist" aria-label="Audiobook collections"></div>
+          <div class="filters">
+            <label class="search">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 4a6 6 0 1 1 0 12 6 6 0 0 1 0-12zm0 2a4 4 0 1 0 0 8 4 4 0 0 0 0-8zm5.3 9.9 4.4 4.4-1.4 1.4-4.4-4.4z"/></svg>
+              <input id="search" type="search" placeholder="Search by title, author or subject…" autocomplete="off" spellcheck="false" />
+            </label>
+            <label class="select"><span>Language</span><select id="lang"></select></label>
+            <label class="select"><span>Show</span>
+              <select id="show">
+                <option value="all">All books</option>
+                <option value="starred">Starred</option>
+                <option value="unread">Not read yet</option>
+                <option value="read">Already read</option>
+                <option value="hidden">Not interested</option>
+              </select>
+            </label>
+            <label class="select"><span>Sort</span>
+              <select id="sort">
+                <option value="popular">Most popular</option>
+                <option value="title">Title A–Z</option>
+                <option value="author">Author A–Z</option>
+                <option value="newest">Newest</option>
+                <option value="shortest">Shortest first</option>
+                <option value="longest">Longest first</option>
+              </select>
+            </label>
+          </div>
+          <div class="source-info">
+            <span id="sourceBlurb"></span>
+            <span class="muted" id="resultCount"></span>
+            <button class="link" id="refreshBtn" title="Download the latest list of books">Refresh list</button>
+          </div>
+        </header>
+        <div class="scroller" id="browseScroller">
+          <div id="loadState"></div>
+          <div class="grid" id="grid"></div>
+          <div id="sentinel" class="sentinel"></div>
+        </div>
+      </section>
+
+      <!-- ============================== Starred -->
+      <section class="view" id="view-starred" hidden>
+        <div class="scroller">
+          <div class="page page-wide" id="starredView"></div>
+        </div>
+      </section>
+
+      <!-- ============================== On card -->
+      <section class="view" id="view-card" hidden>
+        <div class="scroller">
+          <div class="page" id="cardView"></div>
+        </div>
+      </section>
+
+      <!-- ============================== My library -->
+      <section class="view" id="view-library" hidden>
+        <div class="scroller">
+          <div class="page" id="libraryView"></div>
+        </div>
+      </section>
+
+      <!-- ============================== Downloads -->
+      <section class="view" id="view-downloads" hidden>
+        <div class="scroller">
+          <div class="page" id="downloadsView"></div>
+        </div>
+      </section>
+    </main>
+
+    <!-- ============================== Player -->
+    <footer class="player" id="player" hidden>
+      <div class="player-book">
+        <div id="playerCover"></div>
+        <div class="player-text">
+          <div class="player-title" id="playerTitle"></div>
+          <select id="playerChapter" class="player-chapter" aria-label="Chapter"></select>
+        </div>
+      </div>
+      <div class="player-center">
+        <div class="player-buttons">
+          <button class="pbtn" id="pPrev" title="Previous chapter" aria-label="Previous chapter"><svg viewBox="0 0 24 24"><path d="M6 5h2v14H6zm3.5 7L19 5v14z"/></svg></button>
+          <button class="pbtn" id="pBack" title="Back 30 seconds" aria-label="Back 30 seconds"><svg viewBox="0 0 24 24"><path d="M12 5V2L7 6l5 4V7a5 5 0 1 1-5 5H5a7 7 0 1 0 7-7z"/></svg><span>30</span></button>
+          <button class="pbtn pbtn-main" id="pPlay" title="Play / pause" aria-label="Play or pause"></button>
+          <button class="pbtn" id="pFwd" title="Forward 30 seconds" aria-label="Forward 30 seconds"><svg viewBox="0 0 24 24"><path d="M12 5V2l5 4-5 4V7a5 5 0 1 0 5 5h2a7 7 0 1 1-7-7z"/></svg><span>30</span></button>
+          <button class="pbtn" id="pNext" title="Next chapter" aria-label="Next chapter"><svg viewBox="0 0 24 24"><path d="M16 5h2v14h-2zM5 5l9.5 7L5 19z"/></svg></button>
+        </div>
+        <div class="player-seek">
+          <span id="pTime">0:00</span>
+          <input type="range" id="pSeek" min="0" max="1000" value="0" aria-label="Position in chapter" />
+          <span id="pDur">0:00</span>
+        </div>
+      </div>
+      <div class="player-right">
+        <select id="pSpeed" aria-label="Playback speed" title="Playback speed">
+          <option value="0.75">0.75×</option>
+          <option value="1">1×</option>
+          <option value="1.25">1.25×</option>
+          <option value="1.5">1.5×</option>
+          <option value="1.75">1.75×</option>
+          <option value="2">2×</option>
+        </select>
+        <button class="pbtn" id="pClose" title="Close player" aria-label="Close player"><svg viewBox="0 0 24 24"><path d="M6.4 5 12 10.6 17.6 5 19 6.4 13.4 12l5.6 5.6-1.4 1.4-5.6-5.6L6.4 19 5 17.6l5.6-5.6L5 6.4z"/></svg></button>
+      </div>
+      <audio id="audio" preload="auto"></audio>
+    </footer>
+  </div>
+
+  <dialog id="bookDialog" class="dialog dialog-wide"></dialog>
+  <dialog id="roomDialog" class="dialog"></dialog>
+  <dialog id="confirmDialog" class="dialog dialog-small"></dialog>
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+
+  <script src="app.js"></script>
+  <script src="library.js"></script>
+  <script src="player.js"></script>
+</body>
+</html>

@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2a8a84"/>
+      <stop offset="1" stop-color="#145350"/>
+    </linearGradient>
+    <linearGradient id="page" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fffdf8"/>
+      <stop offset="1" stop-color="#efe6d6"/>
+    </linearGradient>
+    <linearGradient id="band" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f7c54a"/>
+      <stop offset="1" stop-color="#e09a1c"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="14" stdDeviation="16" flood-color="#0b2e2c" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+
+  <!-- macOS-style rounded square with standard padding -->
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#bg)"/>
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="none" stroke="#ffffff" stroke-opacity="0.08" stroke-width="4"/>
+
+  <g filter="url(#shadow)">
+    <!-- open book -->
+    <path d="M512 612 C 462 578, 398 568, 336 580 L 336 778 C 398 766, 462 774, 512 806 Z" fill="url(#page)"/>
+    <path d="M512 612 C 562 578, 626 568, 688 580 L 688 778 C 626 766, 562 774, 512 806 Z" fill="url(#page)"/>
+    <path d="M512 612 L 512 806" stroke="#c9b99c" stroke-width="6"/>
+
+    <!-- headphones -->
+    <path d="M300 600 L 300 520 A 212 212 0 0 1 724 520 L 724 600" fill="none" stroke="url(#band)" stroke-width="54" stroke-linecap="round"/>
+    <rect x="238" y="548" width="104" height="186" rx="44" fill="url(#band)"/>
+    <rect x="682" y="548" width="104" height="186" rx="44" fill="url(#band)"/>
+    <rect x="262" y="574" width="34" height="134" rx="17" fill="#ffffff" opacity="0.25"/>
+    <rect x="706" y="574" width="34" height="134" rx="17" fill="#ffffff" opacity="0.25"/>
+  </g>
+
+  <!-- text lines drawn after the shadow group so they cast no shadow -->
+    <g fill="none" stroke="#9fc9c5" stroke-width="10" stroke-linecap="round" opacity="0.9">
+      <path d="M372 630 C 410 622, 448 626, 482 640"/>
+      <path d="M372 668 C 410 660, 448 664, 482 678"/>
+      <path d="M372 706 C 410 698, 448 702, 482 716"/>
+      <path d="M542 640 C 576 626, 614 622, 652 630"/>
+      <path d="M542 678 C 576 664, 614 660, 652 668"/>
+      <path d="M542 716 C 576 702, 614 698, 652 706"/>
+    </g>
+</svg>
