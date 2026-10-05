@@ -20,7 +20,7 @@ function renderGenreChips(items) {
     }, label, count != null ? el('span', { class: 'chip-count' }, count.toLocaleString()) : null);
   $('#genres').replaceChildren(
     chip('home', 'Home'),
-    chip('all', 'All books', items.length),
+    chip('all', state.sourceId === 'otr' ? 'All shows' : 'All books', items.length),
     ...state.genres.filter((g) => counts.get(g.id)).map((g) => chip(g.id, g.label, counts.get(g.id)))
   );
 }

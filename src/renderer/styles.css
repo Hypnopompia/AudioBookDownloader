@@ -547,3 +547,6 @@ body:has(#player:not([hidden])) .toasts { bottom: 110px; }
 :root { --other-audio: #4a5f9a; }
 @media (prefers-color-scheme: dark) { :root { --other-audio: #8197d6; } }
 .seg-other-audio { background: var(--other-audio); }
+
+/* app icon in the sidebar (the PNG has transparent padding around the tile) */
+.brand-icon { width: 52px; height: 52px; margin: -4px -2px -4px -6px; flex: none; }
