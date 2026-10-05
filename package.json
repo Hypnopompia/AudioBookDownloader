@@ -14,7 +14,7 @@
     "dist:mac": "electron-builder --mac --publish never",
     "dist:win": "electron-builder --win --publish never",
     "dist:linux": "electron-builder --linux --publish never",
-    "release": "electron-builder --mac --win --publish always"
+    "release": "node scripts/release.js"
   },
   "build": {
     "appId": "com.tjhunter.audiobooksdloader",
@@ -82,7 +82,7 @@
         "provider": "github",
         "owner": "Hypnopompia",
         "repo": "AudioBookDownloader",
-        "releaseType": "release"
+        "releaseType": "draft"
       }
     ]
   },

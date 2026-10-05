@@ -116,14 +116,15 @@ also has a "Check for updates" button).
 To publish a release:
 
 1. Bump `"version"` in `package.json` (e.g. `1.1.0` → `1.2.0`) and commit.
-2. Build and upload (needs a GitHub token with `repo` access; the `gh` CLI can provide one):
+2. Build and publish (needs the [GitHub CLI](https://cli.github.com) `gh`, logged in):
 
    ```bash
-   GH_TOKEN=$(gh auth token) npm run release
+   npm run release
    ```
 
-   This builds the Mac and Windows installers and publishes them as release `v<version>`,
-   along with the `latest.yml` / `latest-mac.yml` files the updater reads.
+   This creates a draft release `v<version>`, builds the Mac and Windows installers, uploads
+   them along with the `latest.yml` / `latest-mac.yml` files the updater reads, and then
+   publishes the release.
 
 Builds from before v1.1.0 don't include the updater, so they need to be replaced by hand once.
 
