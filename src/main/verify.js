@@ -47,16 +47,22 @@ async function expectedTracks(meta) {
   }
   if (!meta?.identifier) return null;
   const quality = meta.format === '64Kbps MP3' ? 'standard' : 'high';
+  // partial copies list which track numbers they hold
+  const wanted = meta.trackNumbers ? new Set(meta.trackNumbers) : null;
+  const pick = (tracks) => (wanted ? tracks.filter((t, i) => wanted.has(t.number || i + 1)) : tracks);
   const found = await local.find(meta.identifier, quality);
   if (found && found.meta.quality === quality) {
-    return {
-      source: 'computer',
-      tracks: found.meta.tracks.map((t) => ({ size: t.size, md5: t.md5 || null, localFile: path.join(found.dir, t.file) })),
-    };
+    const tracks = pick(found.meta.tracks);
+    if (!wanted || tracks.length === wanted.size) {
+      return {
+        source: 'computer',
+        tracks: tracks.map((t) => ({ size: t.size, md5: t.md5 || null, localFile: path.join(found.dir, t.file) })),
+      };
+    }
   }
   const details = await catalog.getDetails(meta.identifier, quality);
   if (details.format !== meta.format) return null; // can't tell which encoding was copied
-  return { source: 'archive.org', tracks: details.tracks.map((t) => ({ size: t.size, md5: t.md5 || null })) };
+  return { source: 'archive.org', tracks: pick(details.tracks).map((t) => ({ size: t.size, md5: t.md5 || null })) };
 }
 
 /**

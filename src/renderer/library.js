@@ -130,7 +130,12 @@ function localRow(b) {
     coverEl(b.identifier, b.title, b.author),
     el('div', {},
       el('div', { class: 'row-title' }, b.title, e.status === 'read' ? el('span', { class: 'tag ok' }, 'Read') : null),
-      el('div', { class: 'row-sub' }, [b.author, `${b.chapters} chapters`, fmtBytes(b.size), b.quality === 'high' ? 'high quality' : ''].filter(Boolean).join(' · '))),
+      el('div', { class: 'row-sub' }, [
+        b.author,
+        b.partial ? `${b.chapters} of ${b.trackTotal} ${b.unit || 'chapter'}s` : `${b.chapters} ${b.unit || 'chapter'}s`,
+        fmtBytes(b.size),
+        b.quality === 'high' ? 'high quality' : '',
+      ].filter(Boolean).join(' · '))),
     el('div', { class: 'row-actions' },
       el('button', { class: 'btn btn-primary btn-small', onclick: () => playBook({ kind: 'local', dir: b.dir }) }, icon('play'), e.position && e.status !== 'read' ? 'Continue' : 'Play'),
       copyBtn,
@@ -140,14 +145,14 @@ function localRow(b) {
 async function copyLocalToCard(b, btn) {
   btn.disabled = true;
   try {
-    await api.downloads.add({ identifier: b.identifier, quality: b.quality, mount: state.mount, source: b.source, target: 'card' });
+    await api.downloads.add({ identifier: b.identifier, quality: b.quality, mount: state.mount, source: b.source, target: 'card', numbers: b.partial ? b.numbers : null });
     toast(`Copying "${b.title}" to the SD card.`, 'success', { label: 'See progress', run: () => showView('downloads') });
     refreshCard();
   } catch (err) {
     btn.disabled = false;
     if (err.message.includes('NO_SPACE')) {
       await refreshCard();
-      openMakeRoom({ identifier: b.identifier, title: b.title, author: b.author, quality: b.quality, totalBytes: b.size });
+      openMakeRoom({ identifier: b.identifier, title: b.title, author: b.author, quality: b.quality, totalBytes: b.size, numbers: b.partial ? b.numbers : null });
     } else {
       showError(err);
     }

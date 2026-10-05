@@ -91,7 +91,7 @@ async function open(source) {
       title: meta.title,
       author: meta.author,
       source,
-      tracks: meta.tracks.map((t) => ({ title: t.title, seconds: t.seconds || null, url: urlFor(path.join(dir, t.file)) })),
+      tracks: meta.tracks.map((t) => ({ title: t.title, number: t.number, seconds: t.seconds || null, url: urlFor(path.join(dir, t.file)) })),
     };
   }
   if (source?.kind === 'card') {
@@ -104,13 +104,21 @@ async function open(source) {
     } catch {
       /* folder not made by this app */
     }
+    const numberByFile = new Map(
+      (meta?.splitMinutes ? [] : meta?.tracks || []).filter((t) => t.file && t.number).map((t) => [t.file, t.number])
+    );
     return {
       key: meta?.identifier || `folder:${source.folder}`,
       identifier: meta?.identifier || null,
       title: meta?.title || source.folder,
       author: meta?.author || '',
       source,
-      tracks: names.map((n) => ({ title: chapterTitle(n), seconds: null, url: urlFor(path.join(dir, n)) })),
+      tracks: names.map((n) => ({
+        title: chapterTitle(n),
+        number: numberByFile.get(n) ?? null, // position in the full book, when known
+        seconds: null,
+        url: urlFor(path.join(dir, n)),
+      })),
     };
   }
   throw new Error('Unknown book location');

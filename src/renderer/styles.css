@@ -448,3 +448,17 @@ body:has(#player:not([hidden])) .toasts { bottom: 110px; }
 .shelf-arrow:hover { border-color: var(--muted); }
 .genres { padding: 16px 28px 0; }
 .genres:empty { display: none; }
+
+/* ---------------------------------------------------------------- choosing chapters / episodes */
+.chapters-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.chapters-head h3 { margin-bottom: 8px; }
+.sel-bar { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
+.sel-buttons { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.sel-range { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; color: var(--muted); margin-left: 6px; }
+.sel-range .num { width: 76px; padding: 5px 8px; font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 8px; }
+.sel-summary { font-weight: 600; font-size: 15px; }
+.chapters { max-height: 340px; }
+.chapters.selectable li { cursor: pointer; user-select: none; align-items: center; }
+.chapters.selectable li:hover { background: var(--surface-2); }
+.chapters li input[type=checkbox] { pointer-events: none; width: 17px; height: 17px; accent-color: var(--accent); margin: 0; }
+.chapters .t .tag { margin-left: 8px; }

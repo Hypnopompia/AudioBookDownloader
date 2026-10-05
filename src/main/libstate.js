@@ -54,11 +54,19 @@ function update(key, patch = {}) {
   if ('status' in patch) next.status = STATUSES.has(patch.status) ? patch.status : null;
   for (const k of ['title', 'author', 'source', 'identifier']) if (str(patch[k]) !== undefined) next[k] = str(patch[k]);
   if (Number.isFinite(patch.runtime)) next.runtime = patch.runtime;
+  if (Number.isInteger(patch.lastCopied)) next.lastCopied = patch.lastCopied; // highest track number copied to a card
   if ('position' in patch) {
     const p = patch.position;
     next.position =
       p && Number.isInteger(p.track) && Number.isFinite(p.time)
-        ? { track: p.track, time: Math.max(0, p.time), tracks: Number(p.tracks) || null, chapter: str(p.chapter, 200) || '', at: Date.now() }
+        ? {
+            track: p.track,
+            number: Number.isInteger(p.number) ? p.number : null, // track number in the full book (survives partial copies)
+            time: Math.max(0, p.time),
+            tracks: Number(p.tracks) || null,
+            chapter: str(p.chapter, 200) || '',
+            at: Date.now(),
+          }
         : null;
   }
   next.updatedAt = Date.now();

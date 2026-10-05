@@ -221,11 +221,19 @@ function registerIpc() {
    * when it's already there, otherwise downloaded). target 'local': save it
    * on this computer only.
    */
-  handle('downloads:add', async ({ identifier, quality, mount, source, target = 'card' }) => {
+  handle('downloads:add', async ({ identifier, quality, mount, source, target = 'card', numbers = null }) => {
+    if (numbers != null && (!Array.isArray(numbers) || !numbers.length || !numbers.every(Number.isInteger))) {
+      throw new Error('Choose at least one chapter.');
+    }
     const existing = await local.find(identifier, quality);
     if (target === 'local') {
-      if (existing) throw new Error('This book is already saved on this computer.');
-      const details = await catalog.getDetails(identifier, quality);
+      let details = selectTracks(await catalog.getDetails(identifier, existing?.meta.quality || quality), numbers);
+      if (existing) {
+        // only download what isn't saved yet
+        const have = new Set(existing.meta.tracks.map((t) => t.number));
+        details = withTracks(details, details.tracks.filter((t) => !have.has(t.number)));
+        if (!details.tracks.length) throw new Error('These are already saved on this computer.');
+      }
       await fs.mkdir(local.rootDir(), { recursive: true });
       const { free } = await drives.space(local.rootDir());
       if (details.totalBytes + 200 * 1024 * 1024 > free) {
@@ -235,7 +243,14 @@ function registerIpc() {
     }
     checkMount(mount);
     const drive = knownDrives.find((d) => d.mount === mount) || manualMounts.get(mount);
-    const details = existing ? detailsFromLocal(existing.meta) : await catalog.getDetails(identifier, quality);
+    // Use the saved copy if it has everything asked for (no network needed);
+    // otherwise get the list from archive.org and download what's missing.
+    const have = new Set((existing?.meta.tracks || []).map((t) => t.number));
+    const wanted = numbers || (existing ? Array.from({ length: existing.meta.trackTotal }, (_, i) => i + 1) : []);
+    const details =
+      existing && wanted.every((n) => have.has(n))
+        ? selectTracks(detailsFromLocal(existing.meta), numbers)
+        : selectTracks(await catalog.getDetails(identifier, existing?.meta.quality || quality), numbers);
     const { free } = await drives.space(mount);
     if (details.totalBytes + downloader.pendingBytes(mount) > free) throw new Error('NO_SPACE');
     touchedMounts.add(mount);
@@ -387,6 +402,13 @@ app.whenReady().then(() => {
   downloader.on('change', (snap) => send('downloads:changed', snap));
   downloader.on('bookAdded', (job) => {
     forgetCheck(job.mount, job.folder);
+    // remember how far through a long book/series has been copied, for "next batch"
+    const last = Math.max(...job.tracks.map((t, i) => t.number || i + 1));
+    const prev = libstate.all()[job.identifier]?.lastCopied || 0;
+    if (job.partial && last > prev) {
+      const entry = libstate.update(job.identifier, { lastCopied: last, title: job.title, author: job.author, identifier: job.identifier });
+      send('library:changed', { key: job.identifier, entry });
+    }
     send('card:changed', { mount: job.mount });
   });
   downloader.on('idle', () => onQueueIdle().catch((err) => console.error(err)));
@@ -404,6 +426,17 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => app.quit());
 app.on('before-quit', () => libstate.flush());
 
+/** Keep only the chosen track numbers (all of them when numbers is null). */
+function selectTracks(details, numbers) {
+  if (!numbers) return details;
+  const set = new Set(numbers);
+  return withTracks(details, details.tracks.filter((t) => set.has(t.number)));
+}
+
+function withTracks(details, tracks) {
+  return { ...details, tracks, totalBytes: tracks.reduce((a, t) => a + (t.size || 0), 0) };
+}
+
 /** Turn a local library book.json back into the shape catalog.getDetails returns. */
 function detailsFromLocal(meta) {
   return {
@@ -414,7 +447,9 @@ function detailsFromLocal(meta) {
     format: meta.format,
     quality: meta.quality,
     runtime: meta.runtime,
-    tracks: meta.tracks.map(({ name, size, md5, title, seconds }) => ({ name, size, md5, title, seconds })),
+    unit: meta.unit,
+    trackTotal: meta.trackTotal,
+    tracks: meta.tracks.map(({ name, size, md5, title, seconds, number }) => ({ name, size, md5, title, seconds, number })),
     totalBytes: meta.tracks.reduce((a, t) => a + (t.size || 0), 0),
   };
 }

@@ -1,7 +1,7 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert');
-const { sanitizeName, parseDuration, parseTrack, htmlToText, naturalCompare } = require('../src/main/util');
+const { sanitizeName, parseDuration, parseRuntime, parseTrack, htmlToText, naturalCompare } = require('../src/main/util');
 const { buildTracks } = require('../src/main/catalog');
 const { trackFileName } = require('../src/main/sdcard');
 
@@ -17,6 +17,14 @@ test('parseDuration handles archive.org formats', () => {
   assert.strictEqual(parseDuration('09:37'), 577);
   assert.strictEqual(parseDuration('1:02:03'), 3723);
   assert.strictEqual(parseDuration('garbage'), null);
+});
+
+test('parseRuntime handles the H:MM.SS form archive.org uses for long books', () => {
+  assert.strictEqual(parseRuntime('16:31.09'), 16 * 3600 + 31 * 60 + 9); // Dracula
+  assert.strictEqual(parseRuntime('3:14.29'), 3 * 3600 + 14 * 60 + 29);
+  assert.strictEqual(parseRuntime('12:11:09'), 12 * 3600 + 11 * 60 + 9);
+  assert.strictEqual(parseRuntime('22:20'), 22 * 60 + 20); // short story: M:SS
+  assert.strictEqual(parseRuntime(''), null);
 });
 
 test('parseTrack', () => {

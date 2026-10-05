@@ -3,7 +3,7 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { fetchJson } = require('./http');
-const { naturalCompare, parseDuration, parseTrack, first, htmlToText } = require('./util');
+const { naturalCompare, parseDuration, parseRuntime, parseTrack, first, htmlToText } = require('./util');
 
 /**
  * Every source is an Internet Archive collection, so one search API and one
@@ -33,7 +33,7 @@ const SOURCES = [
 ];
 
 const FIELDS = 'identifier,title,creator,downloads,publicdate,language,runtime,subject,avg_rating,num_reviews';
-const CACHE_VERSION = 2; // bump when the cached fields change
+const CACHE_VERSION = 3; // bump when the cached fields change
 
 /**
  * Genres for browsing, matched against each book's subject tags (and title).
@@ -118,7 +118,7 @@ function compact(it) {
     reviews,
     genres,
     lang: String(first(it.language) || '').trim(),
-    runtime: parseDuration(it.runtime),
+    runtime: parseRuntime(it.runtime),
     tags: [...new Set(subjects)].slice(0, 8).join(', '),
   };
 }
@@ -236,6 +236,8 @@ function buildTracks(files, quality) {
   const nums = tracks.map((t) => t.trackNo);
   const useTrackNo = nums.every((n) => n != null) && new Set(nums).size === nums.length;
   tracks.sort((a, b) => (useTrackNo ? a.trackNo - b.trackNo : naturalCompare(a.name, b.name)));
+  // stable 1-based position in the full list; used to pick batches and name files
+  tracks.forEach((t, i) => (t.number = i + 1));
   return { format, tracks };
 }
 
@@ -274,7 +276,7 @@ async function getDetails(identifier, quality = 'standard') {
     description: htmlToText(m.description),
     language: String(first(m.language) || ''),
     date: String(first(m.date) || first(m.publicdate) || '').slice(0, 10),
-    runtime: Math.max(parseDuration(m.runtime) || 0, trackSeconds) || null, // some listed runtimes are wrong
+    runtime: Math.max(parseRuntime(m.runtime) || 0, trackSeconds) || null, // some listed runtimes are wrong
     tags: [...new Set(subjects)].slice(0, 12),
     rating: Number(meta.reviews?.length) ? averageRating(meta.reviews) : null,
     reviews: Array.isArray(meta.reviews) ? meta.reviews.length : 0,
@@ -285,6 +287,9 @@ async function getDetails(identifier, quality = 'standard') {
     sizes,
     tracks,
     totalBytes: tracks.reduce((a, t) => a + t.size, 0),
+    trackTotal: tracks.length,
+    // radio shows are collections of episodes rather than chapters of one story
+    unit: [].concat(m.collection || []).some((c) => /oldtimeradio|radioprograms|otrr/i.test(c)) ? 'episode' : 'chapter',
   };
 }
 

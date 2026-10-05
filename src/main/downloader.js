@@ -54,11 +54,14 @@ class Downloader extends EventEmitter {
       .reduce((a, j) => a + (j.totalBytes - j.copied), 0);
   }
 
-  hasBook(identifier, mount, toCard) {
+  /** Is any of these tracks of this book already queued for the same destination? */
+  hasBook(identifier, mount, toCard, tracks = null) {
+    const numbers = tracks ? new Set(tracks.map((t, i) => t.number || i + 1)) : null;
     return this.jobs.some(
       (j) =>
         j.identifier === identifier && j.toCard === toCard && (!toCard || j.mount === mount) &&
-        ['queued', 'downloading', 'copying', 'waiting'].includes(j.status)
+        ['queued', 'downloading', 'copying', 'waiting'].includes(j.status) &&
+        (!numbers || j.tracks.some((t, i) => numbers.has(t.number || i + 1)))
     );
   }
 
@@ -73,7 +76,7 @@ class Downloader extends EventEmitter {
 
   add(details, { mount = null, driveLabel = '', source, toCard = true, keepLocal = false, splitMinutes = 0 }) {
     if (!details.tracks.length) throw new Error('This item has no MP3 files to download.');
-    if (this.hasBook(details.identifier, mount, toCard)) throw new Error('This book is already in the download list.');
+    if (this.hasBook(details.identifier, mount, toCard, details.tracks)) throw new Error('This book is already in the download list.');
     const job = {
       id: nextId++,
       identifier: details.identifier,
@@ -84,6 +87,9 @@ class Downloader extends EventEmitter {
       format: details.format,
       quality: details.quality,
       tracks: details.tracks,
+      trackTotal: details.trackTotal || details.tracks.length,
+      partial: details.tracks.length < (details.trackTotal || details.tracks.length),
+      unit: details.unit || 'chapter',
       runtime: details.runtime || null,
       totalBytes: details.totalBytes,
       toCard,
@@ -140,7 +146,11 @@ class Downloader extends EventEmitter {
     const totalBytes = active.reduce((a, j) => a + j.totalBytes * (j.toCard ? 2 : 1), 0);
     const doneBytes = active.reduce((a, j) => a + j.downloaded + j.copied, 0);
     return {
-      jobs: this.jobs.map(({ ctrl, tracks, ...j }) => ({ ...j, chapterCount: tracks.length })),
+      jobs: this.jobs.map(({ ctrl, tracks, ...j }) => ({
+        ...j,
+        chapterCount: tracks.length,
+        numbers: tracks.map((t, i) => t.number || i + 1),
+      })),
       busy: active.length > 0,
       queueEta: active.length ? queueEta : null,
       queueProgress: totalBytes ? doneBytes / totalBytes : 0,
@@ -201,18 +211,35 @@ class Downloader extends EventEmitter {
     const signal = job.ctrl.signal;
     const dir = local.dirFor(job.identifier, job.quality);
     const n = job.tracks.length;
-    const localFiles = job.tracks.map((t, i) => path.join(dir, sdcard.trackFileName(i, n, t.title)));
-    let wasLocal = false;
+    // Files are named by their number in the full book, so batches saved at
+    // different times sit side by side in the same folder.
+    const localFiles = job.tracks.map((t, i) =>
+      path.join(dir, sdcard.trackFileName((t.number || i + 1) - 1, job.trackTotal, t.title)));
+    let saved = null; // the book as already saved on this computer, if at all
+    let keepFiles = new Set(); // files that belong to the saved copy
     try {
       // ---- Phase 1: download to the computer
-      wasLocal = !!(await local.readBook(dir));
+      saved = await local.readBook(dir);
+      keepFiles = new Set((saved?.tracks || []).map((t) => t.file));
       job.status = 'downloading';
-      job.message = wasLocal ? 'Getting the book ready…' : 'Starting download…';
+      job.message = saved ? 'Getting the book ready…' : 'Starting download…';
       this._changed();
       await fs.mkdir(dir, { recursive: true });
       await this._downloadAll(job, localFiles, signal);
-      if (!wasLocal) {
-        // Marks the download as complete; until then the folder counts as unfinished.
+      if (job.keepLocal) {
+        // Add these tracks to the saved copy (book.json marks the download as complete).
+        const byNumber = new Map((saved?.tracks || []).map((t) => [t.number, t]));
+        job.tracks.forEach((t, i) =>
+          byNumber.set(t.number || i + 1, {
+            number: t.number || i + 1,
+            name: t.name,
+            size: t.size,
+            md5: t.md5 || null,
+            title: t.title,
+            seconds: t.seconds,
+            file: path.basename(localFiles[i]),
+          }));
+        const tracks = [...byNumber.values()].sort((a, b) => a.number - b.number);
         await local.writeBook(dir, {
           identifier: job.identifier,
           source: job.source,
@@ -220,18 +247,14 @@ class Downloader extends EventEmitter {
           author: job.author,
           format: job.format,
           quality: job.quality,
+          unit: job.unit,
           runtime: job.runtime,
-          totalBytes: job.totalBytes,
+          trackTotal: job.trackTotal,
+          totalBytes: tracks.reduce((a, t) => a + (t.size || 0), 0),
           downloadedAt: new Date().toISOString(),
-          tracks: job.tracks.map((t, i) => ({
-            name: t.name,
-            size: t.size,
-            md5: t.md5 || null,
-            title: t.title,
-            seconds: t.seconds,
-            file: path.basename(localFiles[i]),
-          })),
+          tracks,
         });
+        keepFiles = new Set(tracks.map((t) => t.file));
       }
 
       if (!job.toCard) {
@@ -267,7 +290,16 @@ class Downloader extends EventEmitter {
       const sizes = await Promise.all(localFiles.map((f) => fs.stat(f).then((s) => s.size)));
       job.folder = await sdcard.writeBook(
         job.mount,
-        { identifier: job.identifier, source: job.source, title: job.title, author: job.author, format: job.format, tracks: job.tracks },
+        {
+          identifier: job.identifier,
+          source: job.source,
+          title: job.title,
+          author: job.author,
+          format: job.format,
+          tracks: job.tracks,
+          trackTotal: job.trackTotal,
+          unit: job.unit,
+        },
         localFiles,
         {
           signal,
@@ -279,7 +311,7 @@ class Downloader extends EventEmitter {
               bytesThisFile -= sizes[fileIdx];
               fileIdx++;
             }
-            job.message = `Copying chapter ${fileIdx + 1} of ${n} to the SD card`;
+            job.message = `Copying ${job.unit} ${fileIdx + 1} of ${n} to the SD card`;
             this._changed();
           },
         }
@@ -290,13 +322,13 @@ class Downloader extends EventEmitter {
       job.eta = 0;
       job.finishedAt = Date.now();
       this.emit('bookAdded', job);
-      if (!job.keepLocal && !wasLocal) await fs.rm(dir, { recursive: true, force: true }).catch(() => {});
+      await this._removeTemporary(dir, keepFiles);
       this.emit('localChanged');
     } catch (err) {
       if (signal.aborted) {
         job.status = 'cancelled';
         job.message = 'Cancelled';
-        if (!wasLocal) await fs.rm(dir, { recursive: true, force: true }).catch(() => {});
+        await this._removeTemporary(dir, keepFiles);
       } else {
         job.status = 'error';
         job.error = friendlyNetError(err).message;
@@ -309,13 +341,24 @@ class Downloader extends EventEmitter {
     }
   }
 
+  /** Remove files a card-only job downloaded, keeping anything that is part of the saved copy. */
+  async _removeTemporary(dir, keepFiles) {
+    if (!keepFiles.size) {
+      await fs.rm(dir, { recursive: true, force: true }).catch(() => {});
+      return;
+    }
+    for (const n of await fs.readdir(dir).catch(() => [])) {
+      if (n !== 'book.json' && !keepFiles.has(n)) await fs.rm(path.join(dir, n), { force: true }).catch(() => {});
+    }
+  }
+
   async _downloadAll(job, localFiles, signal) {
     const n = localFiles.length;
     const perFile = new Array(n).fill(0);
     const sync = () => {
       job.downloaded = perFile.reduce((a, b) => a + b, 0);
       const done = perFile.filter((b, i) => b > 0 && b >= (job.tracks[i].size || Infinity)).length;
-      job.message = `Downloading chapter ${Math.min(done + 1, n)} of ${n}`;
+      job.message = `Downloading ${job.unit} ${Math.min(done + 1, n)} of ${n}`;
       this._changed();
     };
     let next = 0;

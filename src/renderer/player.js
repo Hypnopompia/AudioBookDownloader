@@ -99,10 +99,19 @@ async function playBook(source, { track = null } = {}) {
   const e = libEntry(book.key);
   let index = 0;
   let time = 0;
+  const p = e.position;
   if (track != null) index = track;
-  else if (e.position && e.position.tracks === book.tracks.length && e.status !== 'read') {
-    index = Math.min(e.position.track, book.tracks.length - 1);
-    time = e.position.time;
+  else if (p && e.status !== 'read') {
+    // Resume by track number when known (works across partial copies and
+    // between the computer and the card); otherwise by position in the list.
+    const byNumber = p.number != null ? book.tracks.findIndex((t) => t.number === p.number) : -1;
+    if (byNumber >= 0) {
+      index = byNumber;
+      time = p.time;
+    } else if (p.number == null && p.tracks === book.tracks.length) {
+      index = Math.min(p.track, book.tracks.length - 1);
+      time = p.time;
+    }
   }
   // make sure the library knows the title, even for folders copied by hand
   setLib(book.key, {}, { title: book.title, author: book.author, identifier: book.identifier || undefined }).catch(() => {});
@@ -215,7 +224,13 @@ function savePosition(force) {
   const a = audio();
   const time = player.pendingSeek || a.currentTime || 0;
   setLib(b.key, {
-    position: { track: player.index, time, tracks: b.tracks.length, chapter: b.tracks[player.index]?.title || '' },
+    position: {
+      track: player.index,
+      number: b.tracks[player.index]?.number ?? null,
+      time,
+      tracks: b.tracks.length,
+      chapter: b.tracks[player.index]?.title || '',
+    },
   }, { title: b.title, author: b.author, identifier: b.identifier || undefined }).catch(() => {});
 }
 

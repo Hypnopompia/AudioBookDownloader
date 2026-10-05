@@ -143,6 +143,9 @@ async function listCard(mount) {
       managed: !!meta,
       chapters: mp3s.length,
       expectedChapters: meta?.chapters || null,
+      unit: meta?.unit || 'chapter',
+      trackNumbers: meta?.trackNumbers || null,
+      trackTotal: meta?.trackTotal || null,
       quality: meta?.format === '64Kbps MP3' ? 'standard' : meta?.format ? 'high' : null,
       size,
       inOrder: sameOrder(mp3s, sortedNames(mp3s)),
@@ -340,9 +343,25 @@ async function writeOut(dest, source, { onBytes, signal }) {
  * macOS doesn't add "._" resource-fork files to the card.
  * With splitMinutes, long chapters become several numbered part files.
  */
+/** "episodes 101-185", "chapter 4" or "12 episodes" for a set of track numbers. */
+function rangeLabel(numbers, unit = 'chapter') {
+  const sorted = [...numbers].sort((a, b) => a - b);
+  if (sorted.length === 1) return `${unit} ${sorted[0]}`;
+  const contiguous = sorted.every((n, i) => i === 0 || n === sorted[i - 1] + 1);
+  return contiguous ? `${unit}s ${sorted[0]}-${sorted[sorted.length - 1]}` : `${sorted.length} ${unit}s`;
+}
+
 async function writeBook(mount, book, localFiles, { onBytes, signal, splitMinutes = 0 } = {}) {
   if (!fsSync.existsSync(mount)) throw new Error('The SD card is not plugged in.');
-  const base = sanitizeName(book.author ? `${book.title} - ${book.author}` : book.title, 70);
+  const numbers = book.tracks.map((t, i) => t.number || i + 1);
+  const trackTotal = book.trackTotal || book.tracks.length;
+  const partial = numbers.length < trackTotal;
+  const unit = book.unit || 'chapter';
+  const name = book.author ? `${book.title} - ${book.author}` : book.title;
+  // keep the range visible even when the title is long
+  const base = partial
+    ? `${sanitizeName(name, 60)} (${rangeLabel(numbers, unit)})`
+    : sanitizeName(name, 70);
   const folder = await uniqueFolder(mount, base);
   const dir = path.join(mount, folder);
   await fs.mkdir(dir);
@@ -354,11 +373,14 @@ async function writeBook(mount, book, localFiles, { onBytes, signal, splitMinute
     title: book.title,
     author: book.author,
     format: book.format,
+    unit,
     chapters: 0,
+    trackTotal,
+    trackNumbers: numbers, // which tracks of the full book are in this folder
     splitMinutes: splitMinutes || 0,
     addedAt: new Date().toISOString(),
     complete: false,
-    tracks: [], // { file, size, md5 } per file, used by "Check books"
+    tracks: [], // { file, size, md5, number } per file, used by "Check books" and the player
   };
 
   try {
@@ -368,7 +390,10 @@ async function writeBook(mount, book, localFiles, { onBytes, signal, splitMinute
     for (let k = 0; k < plan.length; k++) {
       signal?.throwIfAborted();
       const item = plan[k];
-      const file = trackFileName(k, plan.length, item.title);
+      const number = numbers[item.index];
+      // Unsplit files keep their number in the full book (e.g. "0763 - ..."), which
+      // also keeps name order = play order when batches are added over time.
+      const file = splitMinutes ? trackFileName(k, plan.length, item.title) : trackFileName(number - 1, trackTotal, item.title);
       const dest = path.join(dir, file);
       let md5;
       if (item.parts === 1) {
@@ -385,7 +410,7 @@ async function writeBook(mount, book, localFiles, { onBytes, signal, splitMinute
         md5 = await writeOut(dest, Buffer.concat([tag, pieces[item.part - 1]]), { onBytes, signal });
         if (item.part === item.parts) pieces = null;
       }
-      meta.tracks.push({ file, size: (await fs.stat(dest)).size, md5 });
+      meta.tracks.push({ file, size: (await fs.stat(dest)).size, md5, number });
     }
     // Written last so it never sits between chapters in the directory table.
     // A folder without it (e.g. card pulled mid-copy) shows as incomplete.
@@ -413,5 +438,6 @@ module.exports = {
   writeBook,
   bookPath,
   trackFileName,
+  rangeLabel,
   META_FILE,
 };

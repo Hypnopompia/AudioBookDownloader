@@ -21,7 +21,11 @@ function sanitizeName(name, maxLen = 80) {
     .replace(/[<>:"/\\|?*]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
-  if (s.length > maxLen) s = s.slice(0, maxLen).trim();
+  if (s.length > maxLen) {
+    // cut at a word boundary when there is one reasonably close
+    const cut = s.lastIndexOf(' ', maxLen);
+    s = (cut > maxLen - 20 ? s.slice(0, cut) : s.slice(0, maxLen)).trim().replace(/[-–,:;]+$/, '').trim();
+  }
   s = s.replace(/[. ]+$/, '').replace(/^[. ]+/, '');
   if (!s) s = 'Untitled';
   if (RESERVED.test(s)) s = '_' + s;
@@ -38,6 +42,18 @@ function parseDuration(v) {
     return Math.round(s.split(':').reduce((acc, part) => acc * 60 + parseFloat(part), 0));
   }
   return null;
+}
+
+/**
+ * Parse an archive.org item "runtime". Besides "H:MM:SS" and "M:SS", long
+ * LibriVox books use "H:MM.SS" (a dot before the seconds), e.g. Dracula is
+ * "16:31.09" = 16 h 31 min 9 s. parseDuration would read that as 16½ minutes.
+ */
+function parseRuntime(v) {
+  const s = String(Array.isArray(v) ? v[0] : v ?? '').trim();
+  const m = /^(\d+):(\d{2})\.(\d{2})$/.exec(s);
+  if (m) return Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3]);
+  return parseDuration(s);
 }
 
 /** Parse a track field like "3", "03" or "3/50" into a number (or null). */
@@ -72,4 +88,4 @@ function htmlToText(html) {
     .trim();
 }
 
-module.exports = { naturalCompare, sanitizeName, parseDuration, parseTrack, first, htmlToText };
+module.exports = { naturalCompare, sanitizeName, parseDuration, parseRuntime, parseTrack, first, htmlToText };

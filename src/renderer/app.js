@@ -499,7 +499,7 @@ async function openBook(id, item) {
   if (!dlg.open) dlg.showModal();
   try {
     const details = await api.catalog.details(id, state.settings.quality);
-    if (req !== bookReq) return;
+    if (req !== bookReq || !dlg.open) return;
     renderBook(details);
   } catch (err) {
     if (req !== bookReq) return;
@@ -562,16 +562,82 @@ function refreshBookDialog() {
   if ($('#bookDialog').open && state.dialogBook) renderBook(state.dialogBook);
 }
 
+// ------------------------------------------------------------ chapters / episodes
+
+const unitWord = (d, n = 2) => (d.unit === 'episode' ? 'episode' : 'chapter') + (n === 1 ? '' : 's');
+const UnitTitle = (d) => (d.unit === 'episode' ? 'Episodes' : 'Chapters');
+
+/** Track numbers of a book that are on the plugged-in card (across all its folders). */
+function numbersOnCard(identifier) {
+  const set = new Set();
+  for (const b of state.card?.books || []) {
+    if (b.identifier !== identifier) continue;
+    if (b.trackNumbers) b.trackNumbers.forEach((n) => set.add(n));
+    else for (let i = 1; i <= (b.trackTotal || b.chapters); i++) set.add(i);
+  }
+  return set;
+}
+
+function numbersSaved(identifier) {
+  return new Set(localBook(identifier)?.numbers || []);
+}
+
+function numbersQueued(identifier, toCard) {
+  const set = new Set();
+  for (const j of state.downloads.jobs) {
+    if (j.identifier !== identifier || j.toCard !== toCard || (toCard && j.mount !== state.mount)) continue;
+    if (['queued', 'downloading', 'copying', 'waiting'].includes(j.status)) (j.numbers || []).forEach((n) => set.add(n));
+  }
+  return set;
+}
+
+/**
+ * Pick the next run of tracks that fits in the card's free space, starting
+ * after the last one copied before (or the highest one on the card).
+ * Without a card, picks the next 50.
+ */
+function selectNextThatFit(d, sel) {
+  const onCard = numbersOnCard(d.identifier);
+  const last = Math.max(libEntry(d.identifier).lastCopied || 0, ...onCard, 0);
+  let start = d.tracks.findIndex((t) => t.number > last);
+  if (start < 0) start = 0; // finished the series: start over
+  const fit = fitInfo(0);
+  const budget = fit.noCard ? Infinity : Math.max(0, (fit.free || 0) - 5 * 1024 * 1024);
+  sel.numbers = new Set();
+  let used = 0;
+  for (let i = start; i < d.tracks.length; i++) {
+    const t = d.tracks[i];
+    if (onCard.has(t.number)) continue;
+    if (fit.noCard ? sel.numbers.size >= 50 : used + t.size > budget) break;
+    sel.numbers.add(t.number);
+    used += t.size;
+  }
+}
+
 function renderBook(d) {
   const dlg = $('#bookDialog');
   state.dialogBook = d;
-  const onCard = onCardIds().has(d.identifier);
-  const queued = queuedIds().has(d.identifier);
-  const fit = fitInfo(d.totalBytes);
-  const meta = { title: d.title, author: d.author, source: state.sourceId, runtime: d.runtime, identifier: d.identifier };
-  const loc = localBook(d.identifier);
-  const savingLocal = state.downloads.jobs.some((j) => j.identifier === d.identifier && !j.toCard && ['queued', 'downloading'].includes(j.status));
-  const pos = libEntry(d.identifier).position;
+  const id = d.identifier;
+  const total = d.tracks.length;
+  const meta = { title: d.title, author: d.author, source: state.sourceId, runtime: d.runtime, identifier: id };
+  const loc = localBook(id);
+  const pos = libEntry(id).position;
+  const onCardNums = numbersOnCard(id);
+  const savedNums = numbersSaved(id);
+  const allOnCard = total > 0 && d.tracks.every((t) => onCardNums.has(t.number));
+  const cardPartial = onCardNums.size > 0 && !allOnCard;
+  const fitWhole = fitInfo(d.totalBytes);
+  const byNumber = new Map(d.tracks.map((t) => [t.number, t]));
+
+  // Selection mode: pick a batch of chapters/episodes. Turned on automatically
+  // when the whole thing won't fit, is already partly on the card, or is huge.
+  if (!state.sel || state.sel.id !== id) state.sel = { id, mode: false, numbers: new Set(), anchor: null, auto: false };
+  const sel = state.sel;
+  if (!sel.auto && total > 1 && (cardPartial || (!fitWhole.ok && !fitWhole.noCard) || total > 300)) {
+    sel.auto = true;
+    sel.mode = true;
+    selectNextThatFit(d, sel);
+  }
 
   const desc = el('div', { class: 'description' }, d.description || 'No description available.');
   let moreBtn = null;
@@ -584,16 +650,18 @@ function renderBook(d) {
   const addFact = (k, v) => v && facts.append(el('dt', {}, k), el('dd', {}, v));
   if (d.rating) addFact('Rating', `${'★'.repeat(Math.round(d.rating))}${'☆'.repeat(5 - Math.round(d.rating))}  ${d.rating.toFixed(1)} (${d.reviews} ${d.reviews === 1 ? 'review' : 'reviews'} on archive.org)`);
   addFact('Length', fmtRuntime(d.runtime));
-  addFact('Chapters', d.tracks.length ? String(d.tracks.length) : 'No MP3 files');
+  addFact(UnitTitle(d), total ? total.toLocaleString() : 'No MP3 files');
   addFact('Download size', d.totalBytes ? fmtBytes(d.totalBytes) : '');
   addFact('Language', langName(langKey(d.language)));
   addFact('Published', d.date);
+  if (onCardNums.size) addFact('On the SD card', allOnCard ? `All ${unitWord(d)}` : `${onCardNums.size.toLocaleString()} of ${total.toLocaleString()} ${unitWord(d)}`);
+  if (savedNums.size) addFact('On this computer', savedNums.size >= total ? `All ${unitWord(d)}` : `${savedNums.size.toLocaleString()} of ${total.toLocaleString()} ${unitWord(d)}`);
 
   let quality = null;
   if (d.sizes.standard && d.sizes.high && d.sizes.standard !== d.sizes.high) {
     const opt = (value, label, hint) =>
       el('label', {},
-        el('input', { type: 'radio', name: 'quality', value, checked: d.quality === value, onchange: () => changeQuality(d.identifier, value) }),
+        el('input', { type: 'radio', name: 'quality', value, checked: d.quality === value, onchange: () => changeQuality(id, value) }),
         el('span', {}, label, el('small', {}, hint)));
     quality = el('div', {},
       el('h3', {}, 'Sound quality'),
@@ -602,59 +670,173 @@ function renderBook(d) {
         opt('high', `High — ${fmtBytes(d.sizes.high)}`, 'Bigger files. Only needed for music or very good headphones.')));
   }
 
-  const chapters = el('ol', { class: 'chapters' },
-    d.tracks.map((t, i) => el('li', {}, el('span', { class: 'n' }, i + 1), el('span', { class: 't' }, t.title), el('span', { class: 'd' }, fmtClock(t.seconds)))));
+  // ---- chapter / episode list
+  const list = el('ol', { class: `chapters ${sel.mode ? 'selectable' : ''}` },
+    d.tracks.map((t) =>
+      el('li', { dataset: { n: t.number } },
+        sel.mode ? el('input', { type: 'checkbox', checked: sel.numbers.has(t.number), tabindex: -1, 'aria-label': `Select ${t.title}` }) : null,
+        el('span', { class: 'n' }, t.number),
+        el('span', { class: 't' }, t.title,
+          onCardNums.has(t.number) ? el('span', { class: 'tag ok' }, 'On card') : null,
+          savedNums.has(t.number) ? el('span', { class: 'tag muted' }, 'Saved') : null),
+        el('span', { class: 'd' }, fmtClock(t.seconds)))));
 
-  let action;
-  if (!d.tracks.length) action = el('button', { class: 'btn btn-primary btn-big', disabled: true }, 'No MP3 files available');
-  else if (onCard && cardBook(d.identifier) && (!cardBook(d.identifier).complete || cardBook(d.identifier).check?.status === 'problem')) {
-    action = el('button', { class: 'btn btn-primary btn-big', onclick: () => { dlg.close(); repairBook(cardBook(d.identifier)); } }, icon('retry'), 'Repair on SD card');
-  } else if (onCard) action = el('button', { class: 'btn btn-primary btn-big', disabled: true }, icon('ok'), 'Already on the SD card');
-  else if (queued) action = el('button', { class: 'btn btn-primary btn-big', disabled: true }, 'Downloading now…');
-  else if (fit.noCard) action = el('button', { class: 'btn btn-primary btn-big', disabled: true }, icon('plus'), 'Put on SD card');
-  else if (fit.tooBig) action = el('button', { class: 'btn btn-primary btn-big', disabled: true }, 'Too big for this SD card');
-  else if (!fit.ok) action = el('button', { class: 'btn btn-primary btn-big', onclick: () => openMakeRoom(d) }, 'Make room on the SD card…');
-  else action = el('button', { class: 'btn btn-primary btn-big', onclick: (e) => addBook(d, e.currentTarget) }, icon('plus'), 'Put on SD card');
+  const summary = el('div', { class: 'sel-summary' });
+  const syncChecks = () => {
+    for (const box of list.querySelectorAll('input[type=checkbox]')) box.checked = sel.numbers.has(Number(box.closest('li').dataset.n));
+  };
+  const selectionChanged = () => {
+    const bytes = [...sel.numbers].reduce((a, n) => a + (byNumber.get(n)?.size || 0), 0);
+    const secs = [...sel.numbers].reduce((a, n) => a + (byNumber.get(n)?.seconds || 0), 0);
+    const next = d.tracks.find((t) => !onCardNums.has(t.number) && t.number > (libEntry(id).lastCopied || 0));
+    const cardFull = !fitWhole.noCard && next && next.size > (fitInfo(0).free || 0) - 5 * 1024 * 1024;
+    summary.textContent = sel.numbers.size
+      ? `${sel.numbers.size.toLocaleString()} ${unitWord(d, sel.numbers.size)} selected · ${fmtBytes(bytes)}${secs ? ` · ${fmtRuntime(secs)}` : ''}`
+      : cardFull
+        ? `The SD card is full: there isn't room for the next ${unitWord(d, 1)} (${fmtBytes(next.size)}). Remove something from the card first.`
+        : 'Nothing selected yet.';
+    footer.replaceWith((footer = buildFooter()));
+  };
+  list.addEventListener('click', (e) => {
+    if (!sel.mode) return;
+    const li = e.target.closest('li');
+    if (!li) return;
+    const n = Number(li.dataset.n);
+    const turnOn = !sel.numbers.has(n);
+    if (e.shiftKey && sel.anchor != null) {
+      // shift-click: apply to the whole range from the last click
+      const [a, b] = [sel.anchor, n].sort((x, y) => x - y);
+      for (const t of d.tracks) if (t.number >= a && t.number <= b) turnOn ? sel.numbers.add(t.number) : sel.numbers.delete(t.number);
+    } else {
+      turnOn ? sel.numbers.add(n) : sel.numbers.delete(n);
+    }
+    sel.anchor = n;
+    syncChecks();
+    selectionChanged();
+  });
 
-  // Listen on this computer / save for later
-  let play = null;
-  const cb = cardBook(d.identifier);
-  const playLabel = pos && pos.tracks ? 'Continue listening' : 'Play';
-  if (loc) play = el('button', { class: 'btn btn-secondary btn-big', onclick: () => { dlg.close(); playBook({ kind: 'local', dir: loc.dir }); } }, icon('play'), playLabel);
-  else if (cb) play = el('button', { class: 'btn btn-secondary btn-big', onclick: () => { dlg.close(); playBook({ kind: 'card', mount: state.mount, folder: cb.folder }); } }, icon('play'), playLabel);
-  let save = null;
-  if (d.tracks.length && !loc) {
-    save = savingLocal
-      ? el('button', { class: 'btn btn-secondary btn-big', disabled: true }, 'Saving to computer…')
-      : el('button', { class: 'btn btn-secondary btn-big', title: 'Download now and listen here, or copy to an SD card later', onclick: (e) => saveLocal(d, e.currentTarget) }, icon('computer'), 'Save to computer');
+  let selBar = null;
+  if (sel.mode) {
+    const from = el('input', { type: 'number', min: 1, max: total, value: d.tracks[0]?.number || 1, class: 'num' });
+    const to = el('input', { type: 'number', min: 1, max: total, value: Math.min(total, 50), class: 'num' });
+    const last = libEntry(id).lastCopied;
+    selBar = el('div', { class: 'sel-bar' },
+      el('div', { class: 'sel-buttons' },
+        el('button', { class: 'btn btn-secondary btn-small', onclick: () => { selectNextThatFit(d, sel); syncChecks(); selectionChanged(); } },
+          fitWhole.noCard ? `Select next 50` : 'Select next that fit'),
+        el('button', { class: 'btn btn-secondary btn-small', onclick: () => { sel.numbers = new Set(d.tracks.map((t) => t.number)); syncChecks(); selectionChanged(); } }, 'All'),
+        el('button', { class: 'btn btn-secondary btn-small', onclick: () => { sel.numbers.clear(); syncChecks(); selectionChanged(); } }, 'None'),
+        el('span', { class: 'sel-range' }, 'From', from, 'to', to,
+          el('button', {
+            class: 'btn btn-secondary btn-small',
+            onclick: () => {
+              const [a, b] = [Number(from.value), Number(to.value)].sort((x, y) => x - y);
+              sel.numbers = new Set(d.tracks.filter((t) => t.number >= a && t.number <= b).map((t) => t.number));
+              syncChecks();
+              selectionChanged();
+            },
+          }, 'Select'))),
+      last ? el('div', { class: 'hint' }, `Last time you put ${unitWord(d)} up to #${last} on an SD card.`) : null,
+      el('div', { class: 'hint' }, 'Tip: click one, then Shift-click another to select everything in between.'),
+      summary);
   }
+
+  // ---- footer actions
+  const buildFooter = () => {
+    const parts = [el('button', { class: 'link', onclick: () => api.openExternal(d.url) }, 'View on archive.org'), el('span', { class: 'spacer' })];
+    const big = (cls, label, onclick, opts = {}) => el('button', { class: `btn ${cls} btn-big`, onclick, ...opts }, label);
+
+    // Listen
+    const cb = cardBook(id);
+    const playLabel = pos && pos.tracks ? 'Continue listening' : 'Play';
+    if (loc) parts.push(big('btn-secondary', [icon('play'), playLabel], () => { dlg.close(); playBook({ kind: 'local', dir: loc.dir }); }));
+    else if (cb) parts.push(big('btn-secondary', [icon('play'), playLabel], () => { dlg.close(); playBook({ kind: 'card', mount: state.mount, folder: cb.folder }); }));
+
+    if (!total) {
+      parts.push(big('btn-primary', 'No MP3 files available', null, { disabled: true }));
+      return el('div', { class: 'dialog-foot' }, parts);
+    }
+
+    if (sel.mode) {
+      const queuedCard = numbersQueued(id, true);
+      const queuedLocal = numbersQueued(id, false);
+      const toCard = [...sel.numbers].filter((n) => !onCardNums.has(n) && !queuedCard.has(n)).sort((a, b) => a - b);
+      const toSave = [...sel.numbers].filter((n) => !savedNums.has(n) && !queuedLocal.has(n)).sort((a, b) => a - b);
+      const bytes = toCard.reduce((a, n) => a + (byNumber.get(n)?.size || 0), 0);
+      const saveBytes = toSave.reduce((a, n) => a + (byNumber.get(n)?.size || 0), 0);
+      const fit = fitInfo(bytes);
+      const sub = (numbers, b) => ({ ...d, numbers, totalBytes: b, base: d }); // a batch of this book
+      const word = (n) => `${n.toLocaleString()} ${unitWord(d, n)}`;
+      if (sel.numbers.size && toCard.length && !fit.noCard) parts.splice(2, 0, el('span', { class: `fit ${fit.ok ? 'ok' : 'bad'}` }, fit.text));
+      parts.push(toSave.length
+        ? big('btn-secondary', [icon('computer'), `Save ${word(toSave.length)}`], (e) => saveLocal(sub(toSave, saveBytes), e.currentTarget), { title: 'Download to this computer' })
+        : big('btn-secondary', sel.numbers.size ? 'Saved on computer' : 'Save to computer', null, { disabled: true }));
+      if (!sel.numbers.size) parts.push(big('btn-primary', 'Choose some first', null, { disabled: true }));
+      else if (!toCard.length) parts.push(big('btn-primary', [icon('ok'), 'Already on the SD card'], null, { disabled: true }));
+      else if (fit.noCard) parts.push(big('btn-primary', [icon('plus'), 'Put on SD card'], null, { disabled: true }));
+      else if (fit.tooBig) parts.push(big('btn-primary', 'Too many for this SD card', null, { disabled: true }));
+      else if (!fit.ok) parts.push(big('btn-primary', 'Make room on the SD card…', () => openMakeRoom(sub(toCard, bytes))));
+      else parts.push(big('btn-primary', [icon('plus'), `Put ${word(toCard.length)} on SD card`], (e) => addBook(sub(toCard, bytes), e.currentTarget)));
+      return el('div', { class: 'dialog-foot' }, parts);
+    }
+
+    // Whole book
+    const queued = queuedIds().has(id);
+    const savingLocal = numbersQueued(id, false).size > 0;
+    if (!queued && !allOnCard) parts.splice(2, 0, el('span', { class: `fit ${fitWhole.ok ? 'ok' : 'bad'}` }, fitWhole.text));
+    if (!loc) {
+      parts.push(savingLocal
+        ? big('btn-secondary', 'Saving to computer…', null, { disabled: true })
+        : big('btn-secondary', [icon('computer'), 'Save to computer'], (e) => saveLocal(d, e.currentTarget), { title: 'Download now and listen here, or copy to an SD card later' }));
+    }
+    if (allOnCard && cb && (!cb.complete || cb.check?.status === 'problem')) parts.push(big('btn-primary', [icon('retry'), 'Repair on SD card'], () => { dlg.close(); repairBook(cb); }));
+    else if (allOnCard) parts.push(big('btn-primary', [icon('ok'), 'Already on the SD card'], null, { disabled: true }));
+    else if (queued) parts.push(big('btn-primary', 'Downloading now…', null, { disabled: true }));
+    else if (fitWhole.noCard) parts.push(big('btn-primary', [icon('plus'), 'Put on SD card'], null, { disabled: true }));
+    else if (fitWhole.tooBig) parts.push(big('btn-primary', 'Too big for this SD card', null, { disabled: true }));
+    else if (!fitWhole.ok) parts.push(big('btn-primary', 'Make room on the SD card…', () => openMakeRoom(d)));
+    else parts.push(big('btn-primary', [icon('plus'), 'Put on SD card'], (e) => addBook(d, e.currentTarget)));
+    return el('div', { class: 'dialog-foot' }, parts);
+  };
+  let footer = buildFooter();
+
+  const toggleMode = () => {
+    sel.mode = !sel.mode;
+    sel.auto = true;
+    if (sel.mode && !sel.numbers.size) selectNextThatFit(d, sel);
+    renderBook(d);
+  };
+  const stopped = pos && pos.tracks && libEntry(id).status !== 'read'
+    ? el('div', { class: 'muted' }, `You stopped at ${d.unit === 'episode' ? 'episode' : 'chapter'} ${pos.number ?? pos.track + 1}${pos.number ? '' : ` of ${pos.tracks}`}, ${fmtClock(pos.time)}.`)
+    : null;
 
   dlg.replaceChildren(
     el('button', { class: 'close-x', 'aria-label': 'Close', onclick: () => dlg.close() }, '×'),
     el('div', { class: 'dialog-body' },
       el('div', { class: 'detail' },
-        el('div', {}, coverEl(d.identifier, d.title, d.author),
+        el('div', {}, coverEl(id, d.title, d.author),
           d.tags.length ? el('div', { class: 'tags' }, d.tags.slice(0, 8).map((t) => el('span', {}, t))) : null),
         el('div', {},
           el('h2', {}, d.title),
           el('div', { class: 'detail-author' }, d.author || 'Unknown author'),
-          statusButtons(d.identifier, meta, () => renderBook(d)),
-          loc ? el('div', { class: 'fit ok' }, icon('computer'), ' Saved on this computer') : null,
-          pos && pos.tracks && libEntry(d.identifier).status !== 'read'
-            ? el('div', { class: 'muted' }, `You stopped at chapter ${pos.track + 1} of ${pos.tracks}, ${fmtClock(pos.time)}.`)
-            : null,
+          statusButtons(id, meta, () => renderBook(d)),
+          loc ? el('div', { class: 'fit ok' }, icon('computer'), loc.partial ? ' Partly saved on this computer' : ' Saved on this computer') : null,
+          stopped,
           facts,
           desc, moreBtn,
           quality,
-          d.tracks.length ? [el('h3', {}, `Chapters (${d.tracks.length})`), chapters] : null))),
-    el('div', { class: 'dialog-foot' },
-      el('button', { class: 'link', onclick: () => api.openExternal(d.url) }, 'View on archive.org'),
-      el('span', { class: 'spacer' }),
-      d.tracks.length && !onCard && !queued ? el('span', { class: `fit ${fit.ok ? 'ok' : 'bad'}` }, fit.text) : null,
-      play,
-      save,
-      action)
+          total
+            ? [
+                el('div', { class: 'chapters-head' },
+                  el('h3', {}, `${UnitTitle(d)} (${total.toLocaleString()})`),
+                  total > 1 ? el('button', { class: 'link', onclick: toggleMode }, sel.mode ? `Use all ${unitWord(d)}` : `Choose ${unitWord(d)}…`) : null),
+                selBar,
+                list,
+              ]
+            : null))),
+    footer
   );
+  if (sel.mode) selectionChanged();
 }
 
 async function saveLocal(d, btn) {
@@ -663,12 +845,12 @@ async function saveLocal(d, btn) {
     btn.textContent = 'Starting…';
   }
   try {
-    await api.downloads.add({ identifier: d.identifier, quality: d.quality, source: state.sourceId, target: 'local' });
+    await api.downloads.add({ identifier: d.identifier, quality: d.quality, source: state.sourceId, target: 'local', numbers: d.numbers || null });
     toast(`"${d.title}" is being saved to this computer. Find it under My library.`, 'success', { label: 'See progress', run: () => showView('downloads') });
-    renderBook(d);
+    renderBook(d.base || d);
   } catch (err) {
     showError(err);
-    renderBook(d);
+    renderBook(d.base || d);
   }
 }
 
@@ -687,7 +869,7 @@ async function addBook(d, btn) {
     btn.textContent = 'Adding…';
   }
   try {
-    await api.downloads.add({ identifier: d.identifier, quality: d.quality, mount: state.mount, source: state.sourceId });
+    await api.downloads.add({ identifier: d.identifier, quality: d.quality, mount: state.mount, source: state.sourceId, numbers: d.numbers || null });
     $('#bookDialog').close();
     toast(`"${d.title}" is downloading. It will be copied to the SD card automatically.`, 'success', {
       label: 'See progress',
@@ -700,7 +882,7 @@ async function addBook(d, btn) {
       openMakeRoom(d);
     } else {
       showError(err);
-      if (btn) renderBook(d);
+      if (btn) renderBook(d.base || d);
     }
   }
 }
@@ -980,7 +1162,11 @@ function renderCardView() {
 }
 
 function bookRow(b, i) {
-  const sub = [b.author, `${b.chapters} ${b.chapters === 1 ? 'chapter' : 'chapters'}`, fmtBytes(b.size)].filter(Boolean).join(' · ');
+  const unit = b.unit === 'episode' ? 'episode' : 'chapter';
+  const count = b.trackNumbers && b.trackTotal && b.trackNumbers.length < b.trackTotal
+    ? `${b.trackNumbers.length} of ${b.trackTotal} ${unit}s`
+    : `${b.chapters} ${b.chapters === 1 ? unit : `${unit}s`}`;
+  const sub = [b.author, count, fmtBytes(b.size)].filter(Boolean).join(' · ');
   return el('div', { class: 'row' },
     el('div', { class: 'order' }, i + 1),
     coverEl(b.identifier, b.title, b.author),
@@ -1187,9 +1373,9 @@ function jobRow(j) {
     pct = 50;
   } else if (j.status === 'done') {
     pct = 100;
-    numbers = `${j.chapterCount} chapters · ${fmtBytes(j.totalBytes)}`;
+    numbers = `${j.chapterCount} ${j.unit || 'chapter'}s · ${fmtBytes(j.totalBytes)}`;
   } else if (j.status === 'queued') {
-    numbers = `${j.chapterCount} chapters · ${fmtBytes(j.totalBytes)} · waiting for the book above to finish`;
+    numbers = `${j.chapterCount} ${j.unit || 'chapter'}s · ${fmtBytes(j.totalBytes)} · waiting for the book above to finish`;
   }
 
   const actions = [];
@@ -1285,7 +1471,8 @@ async function init() {
     },
     { root: $('#browseScroller'), rootMargin: '600px' }
   ).observe($('#sentinel'));
-  $('#bookDialog').addEventListener('close', () => { state.dialogBook = null; bookReq++; });
+  // (the close event fires after a task delay, so it must not cancel a book that was just opened)
+  $('#bookDialog').addEventListener('close', () => { if (!$('#bookDialog').open) state.dialogBook = null; });
   for (const d of document.querySelectorAll('dialog')) {
     d.addEventListener('click', (e) => { if (e.target === d) d.close(); }); // click backdrop to close
   }

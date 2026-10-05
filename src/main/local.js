@@ -37,7 +37,12 @@ function dirByName(name) {
 
 async function readBook(dir) {
   try {
-    return JSON.parse(await fs.readFile(path.join(dir, META), 'utf8'));
+    const meta = JSON.parse(await fs.readFile(path.join(dir, META), 'utf8'));
+    // books saved by older versions were always complete and unnumbered
+    meta.tracks = (meta.tracks || []).map((t, i) => ({ ...t, number: t.number ?? i + 1 }));
+    meta.trackTotal = meta.trackTotal || meta.tracks.length;
+    meta.unit = meta.unit || 'chapter';
+    return meta;
   } catch {
     return null;
   }
@@ -65,7 +70,16 @@ async function list() {
     const meta = await readBook(dir);
     if (!meta) continue;
     const { tracks, ...rest } = meta;
-    books.push({ ...rest, dir: e.name, chapters: tracks?.length || 0, size: await dirSize(dir) });
+    books.push({
+      ...rest,
+      dir: e.name,
+      chapters: tracks?.length || 0,
+      partial: (tracks?.length || 0) < meta.trackTotal,
+      numbers: (tracks || []).map((t) => t.number),
+      firstNumber: tracks?.[0]?.number ?? 1,
+      lastNumber: tracks?.[tracks.length - 1]?.number ?? 0,
+      size: await dirSize(dir),
+    });
   }
   books.sort((a, b) => String(b.downloadedAt).localeCompare(String(a.downloadedAt)));
   return { root, books, total: books.reduce((a, b) => a + b.size, 0) };
@@ -85,11 +99,22 @@ async function remove(name) {
   await fs.rm(dirByName(name), { recursive: true, force: true, maxRetries: 3 });
 }
 
-/** Delete unfinished downloads left over from an earlier session. */
+/**
+ * Delete unfinished downloads left over from an earlier session: folders
+ * without book.json, and MP3s in saved books that book.json doesn't list.
+ */
 async function cleanupPartial() {
   for (const e of await fs.readdir(root, { withFileTypes: true }).catch(() => [])) {
-    if (e.isDirectory() && !(await readBook(path.join(root, e.name)))) {
-      await fs.rm(path.join(root, e.name), { recursive: true, force: true }).catch(() => {});
+    if (!e.isDirectory()) continue;
+    const dir = path.join(root, e.name);
+    const meta = await readBook(dir);
+    if (!meta) {
+      await fs.rm(dir, { recursive: true, force: true }).catch(() => {});
+      continue;
+    }
+    const listed = new Set(meta.tracks.map((t) => t.file));
+    for (const n of await fs.readdir(dir).catch(() => [])) {
+      if ((/\.mp3$/i.test(n) && !listed.has(n)) || n.endsWith('.part')) await fs.rm(path.join(dir, n), { force: true }).catch(() => {});
     }
   }
 }
