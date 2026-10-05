@@ -1,10 +1,10 @@
 'use strict';
 
 /*
- * "Check books": read every chapter back from the SD card and compare it
+ * "Check books": read every chapter back from the drive and compare it
  * with what it should be. The expected size + MD5 of each chapter comes from
  * (in order of preference):
- *   1. the book's .book.json on the card (written by this app since v1.2),
+ *   1. the .listensync.json the app writes into each folder on the drive,
  *   2. the copy saved on this computer, if there is one,
  *   3. archive.org's file list (archive.org publishes an MD5 for every file).
  * Chapters are matched by play order (001, 002, ...).
@@ -32,13 +32,7 @@ function md5File(file, onBytes, signal) {
   });
 }
 
-async function readCardMeta(dir) {
-  try {
-    return JSON.parse(await fsp.readFile(path.join(dir, sdcard.META_FILE), 'utf8'));
-  } catch {
-    return null;
-  }
-}
+const readCardMeta = (dir) => sdcard.readMeta(dir);
 
 /** Expected chapters as [{ size, md5, localFile? }] in play order, or null if unknown. */
 async function expectedTracks(meta) {
@@ -46,6 +40,7 @@ async function expectedTracks(meta) {
     return { source: 'card', tracks: meta.tracks.map((t) => ({ size: t.size, md5: t.md5 || null })) };
   }
   if (!meta?.identifier) return null;
+  if (/^pod/.test(meta.identifier)) return null; // podcast copies always carry their own checksum list
   const quality = meta.format === '64Kbps MP3' ? 'standard' : 'high';
   // partial copies list which track numbers they hold
   const wanted = meta.trackNumbers ? new Set(meta.trackNumbers) : null;

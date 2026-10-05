@@ -147,14 +147,22 @@ const langName = (key) => (LANGS[key] ? LANGS[key][0] : key ? key.charAt(0).toUp
 
 const fold = (s) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 
+// Podcast artwork lives on each publisher's site, so remember it by id.
+const covers = new Map();
+function rememberCover(id, url) {
+  if (id && typeof url === 'string' && /^https:\/\//.test(url)) covers.set(id, url);
+}
+const isPodcastId = (id) => /^pod(apple)?-/.test(id || '');
+
 const COVER_COLORS = ['#1f6f6b', '#8a4b2a', '#3e5a8a', '#6b4a7a', '#4d6b2f', '#8a3a4a', '#2f5d6b', '#7a5d1f'];
 function coverEl(id, title, author) {
   const color = COVER_COLORS[[...String(id)].reduce((a, c) => a + c.charCodeAt(0), 0) % COVER_COLORS.length];
   const wrap = el('div', { class: 'cover', style: { background: color } });
   const fallback = el('div', { class: 'cover-fallback' }, title || '', author ? el('small', {}, author) : null);
-  if (id) {
+  const src = covers.get(id) || (id && !isPodcastId(id) ? `https://archive.org/services/img/${encodeURIComponent(id)}` : null);
+  if (src) {
     const img = el('img', {
-      src: `https://archive.org/services/img/${encodeURIComponent(id)}`,
+      src,
       alt: '',
       loading: 'lazy',
       decoding: 'async',
@@ -165,6 +173,24 @@ function coverEl(id, title, author) {
     wrap.append(fallback);
   }
   return wrap;
+}
+
+/** Make a row's cover or title open the book's details window (description, rating, chapters…). */
+function toDetails(node, id, item) {
+  if (!id) return node; // e.g. folders copied to the card by hand
+  node.classList.add('to-details');
+  node.setAttribute('role', 'button');
+  node.tabIndex = 0;
+  node.title = 'Show details';
+  const open = () => openBook(id, item);
+  node.addEventListener('click', open);
+  node.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      open();
+    }
+  });
+  return node;
 }
 
 function toast(text, kind = '', action) {
@@ -273,7 +299,78 @@ function queuedIds() {
 // Browse
 // =========================================================================
 
+// Icon and short description for each source card
+const SOURCE_STYLE = {
+  librivox: {
+    tagline: 'Classic audiobooks',
+    path: 'M12 6.5C10.3 5 7.8 4.3 4 4.5v13c3.6-.2 6.1.5 8 2 1.9-1.5 4.4-2.2 8-2v-13c-3.8-.2-6.3.5-8 2zm-1 10.6c-1.7-.9-3.7-1.3-5-1.3V6.5c2 0 3.6.5 5 1.4zm7-1.3c-1.3 0-3.3.4-5 1.3V7.9c1.4-.9 3-1.4 5-1.4z',
+  },
+  community: {
+    label: 'Community', // full name is too long for the card
+    tagline: 'Member audiobooks',
+    path: 'M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zm0-6a2 2 0 1 1 0 4 2 2 0 0 1 0-4zm8 6a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM9 13c-3.3 0-6 1.8-6 4v2h12v-2c0-2.2-2.7-4-6-4zm-4 4c.3-.9 2-2 4-2s3.7 1.1 4 2zm12-4c-.6 0-1.2.1-1.7.2.9.9 1.7 2.1 1.7 3.8v2h4v-2c0-2.2-1.8-4-4-4z',
+  },
+  otr: {
+    tagline: '1930s–50s shows',
+    path: 'M20 6H8.3l8.3-3.4-.8-1.8L3.2 6.1A2 2 0 0 0 2 8v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2zM7 20a3 3 0 1 1 0-6 3 3 0 0 1 0 6zm13-8h-2v-2h-2v2H4V8h16z',
+  },
+  podcasts: {
+    tagline: 'Shows & episodes',
+    path: 'M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.9V21h2v-3.1A7 7 0 0 0 19 11z',
+  },
+};
+
+const SOURCE_SHORT = { librivox: 'LibriVox', community: 'Community', otr: 'Old Time Radio', podcasts: 'Podcast' };
+let sourceIndex = null; // id -> source, built from loaded catalogs
+
+/** Which source an item came from: podcast ids, the saved source, or the loaded catalogs. */
+function sourceOf(id, hint) {
+  if (isPodcastId(id)) return 'podcasts';
+  if (hint && SOURCE_SHORT[hint] && hint !== 'podcasts') return hint;
+  if (!id) return null;
+  if (!sourceIndex || sourceIndex.size === 0) {
+    sourceIndex = new Map();
+    for (const [src, data] of Object.entries(state.catalogs)) for (const it of data.items) if (!sourceIndex.has(it.id)) sourceIndex.set(it.id, src);
+  }
+  return sourceIndex.get(id) || (/librivox/i.test(id) ? 'librivox' : null);
+}
+
+/** Small coloured tag with the source's icon and name. */
+function sourceTag(id, hint) {
+  const src = sourceOf(id, hint);
+  if (!src) return null;
+  const svg = sourceIcon(src);
+  return el('span', { class: `src-tag src-${src}`, title: `From ${state.sources.find((s) => s.id === src)?.name || SOURCE_SHORT[src]}` }, svg, SOURCE_SHORT[src]);
+}
+
+function sourceIcon(id) {
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('aria-hidden', 'true');
+  const p = document.createElementNS(SVG_NS, 'path');
+  p.setAttribute('d', SOURCE_STYLE[id]?.path || ICONS.play);
+  svg.append(p);
+  return svg;
+}
+
+/** "Show" filter options worded for the current source. */
+const SHOW_OPTIONS = {
+  books: [['all', 'All books'], ['starred', 'Starred'], ['unread', 'Not read yet'], ['read', 'Already read'], ['hidden', 'Not interested']],
+  otr: [['all', 'All shows'], ['starred', 'Starred'], ['unread', 'Not heard yet'], ['read', 'Already heard'], ['hidden', 'Not interested']],
+  podcasts: [['all', 'All podcasts'], ['starred', 'Following'], ['hidden', 'Not interested']],
+};
+
+function renderShowOptions() {
+  const opts = SHOW_OPTIONS[state.sourceId] || SHOW_OPTIONS.books;
+  if (!opts.some(([v]) => v === state.show)) {
+    state.show = 'all';
+    api.settings.set({ show: 'all' }).catch(() => {});
+  }
+  $('#show').replaceChildren(...opts.map(([value, label]) => el('option', { value, selected: value === state.show }, label)));
+}
+
 function renderSources() {
+  renderShowOptions();
   $('#sources').replaceChildren(
     ...state.sources.map((s) =>
       el(
@@ -282,9 +379,13 @@ function renderSources() {
           class: `source ${s.id === state.sourceId ? 'active' : ''}`,
           role: 'tab',
           'aria-selected': String(s.id === state.sourceId),
+          title: s.blurb || '',
           onclick: () => selectSource(s.id),
         },
-        s.name
+        el('span', { class: 'source-icon' }, sourceIcon(s.id)),
+        el('span', { class: 'source-text' },
+          el('strong', {}, SOURCE_STYLE[s.id]?.label || s.name),
+          SOURCE_STYLE[s.id] ? el('small', {}, SOURCE_STYLE[s.id].tagline) : null)
       )
     )
   );
@@ -313,14 +414,32 @@ function prepareCatalog(data) {
 
 async function loadCatalog(id, force = false) {
   state.loading = id;
+  $('#lang').closest('label').hidden = id === 'podcasts';
+  $('#search').placeholder = id === 'podcasts' ? 'Search podcasts by name or topic…' : 'Search by title, author or subject…';
+  if (id === 'podcasts') {
+    state.loading = null;
+    $('#grid').replaceChildren();
+    $('#shelves').replaceChildren();
+    $('#loadState').replaceChildren();
+    renderPodcasts(force);
+    return;
+  }
+  // Clear everything from the previous source so its books, genre counts and
+  // language counts don't show while this source's list is loading.
   $('#grid').replaceChildren();
+  $('#shelves').replaceChildren();
+  $('#genres').replaceChildren();
   $('#resultCount').textContent = '';
+  state.filtered = [];
+  state.shown = 0;
   if (!state.catalogs[id] || force) {
+    $('#lang').replaceChildren(el('option', { value: '' }, 'Loading…'));
     renderLoading(null);
   }
   try {
     const data = state.catalogs[id] && !force ? state.catalogs[id] : prepareCatalog(await api.catalog.load(id, force));
     state.catalogs[id] = data;
+    sourceIndex = null;
     if (state.sourceId !== id) return;
     state.loading = null;
     renderLangs();
@@ -371,6 +490,10 @@ const SORTERS = {
 };
 
 function applyFilters() {
+  if (state.sourceId === 'podcasts') {
+    renderPodcasts();
+    return;
+  }
   const data = state.catalogs[state.sourceId];
   if (!data) return;
   const lang = $('#lang').value;
@@ -418,15 +541,16 @@ function applyFilters() {
   }
 }
 
-/** Badges on a cover: SD card / downloading / on computer / read, a star, and listening progress. */
+/** Badges on a cover: drive / downloading / on computer / read, a star, and listening progress. */
 function decorateCover(cover, id, onCard, queued) {
   cover.querySelectorAll('.badge, .star-mark, .cover-progress').forEach((n) => n.remove());
   const e = state.lib[id] || {};
   let badge = null;
   const cb = onCard.has(id) ? cardBook(id) : null;
-  if (cb && (!cb.complete || cb.check?.status === 'problem')) badge = el('span', { class: 'badge warn', title: 'Open "On the SD card" to repair it' }, 'Check SD card');
-  else if (cb && cb.check?.status === 'ok') badge = el('span', { class: 'badge', title: 'Checked: every chapter matches the original' }, 'On SD card ✓');
-  else if (cb) badge = el('span', { class: 'badge' }, 'On SD card');
+  if (state.podNew?.has(id)) badge = el('span', { class: 'badge new' }, 'New episodes'); // followed podcast with new episodes
+  else if (cb && (!cb.complete || cb.check?.status === 'problem')) badge = el('span', { class: 'badge warn', title: 'Open "On the drive" to repair it' }, 'Check drive');
+  else if (cb && cb.check?.status === 'ok') badge = el('span', { class: 'badge', title: 'Checked: every chapter matches the original' }, 'On drive ✓');
+  else if (cb) badge = el('span', { class: 'badge' }, 'On drive');
   else if (queued.has(id)) badge = el('span', { class: 'badge queued' }, 'Downloading');
   else if (localBook(id)) badge = el('span', { class: 'badge local' }, 'On computer');
   else if (e.status === 'read') badge = el('span', { class: 'badge read' }, 'Read');
@@ -450,13 +574,14 @@ const fmtRating = (rating) => (rating ? `★ ${rating.toFixed(1)}` : '');
 function bookCard(it, onCard, queued) {
   const cover = coverEl(it.id, it.title, it.author);
   decorateCover(cover, it.id, onCard, queued);
-  const meta = [fmtRating(it.rating), fmtRuntime(it.runtime), state.lang ? '' : langName(it.lk)].filter(Boolean).join(' · ');
+  const meta = it.metaText || [fmtRating(it.rating), fmtRuntime(it.runtime), state.lang ? '' : langName(it.lk)].filter(Boolean).join(' · ');
   return el(
     'button',
     { class: 'book', dataset: { id: it.id }, onclick: () => openBook(it.id, it) },
     cover,
     el('div', { class: 'book-title' }, it.title),
     el('div', { class: 'book-author' }, it.author || 'Unknown author'),
+    it.showSource ? el('div', { class: 'book-source' }, sourceTag(it.id, it.source)) : null,
     meta ? el('div', { class: 'book-meta' }, meta) : null
   );
 }
@@ -509,10 +634,10 @@ async function openBook(id, item) {
 
 function fitInfo(bytes) {
   const drive = currentDrive();
-  if (!drive) return { ok: false, text: 'Plug in the SD card to put this book on it.', noCard: true };
+  if (!drive) return { ok: false, text: 'Plug in the drive to put this book on it.', noCard: true };
   const pending = state.card?.pendingBytes || 0;
   const free = (state.card?.free ?? drive.free) - pending;
-  if (bytes <= free) return { ok: true, text: `Fits on the SD card (${fmtBytes(free - bytes)} will be left).`, free };
+  if (bytes <= free) return { ok: true, text: `Fits on the drive (${fmtBytes(free - bytes)} will be left).`, free };
   const local = ' You can still save it to this computer.';
   // Even removing every audiobook wouldn't free enough space
   const mostPossible = free + (state.card?.booksSize || 0);
@@ -520,21 +645,21 @@ function fitInfo(bytes) {
     return {
       ok: false,
       tooBig: true,
-      text: `Too big for this SD card: needs ${fmtBytes(bytes)}, but the card can hold at most ${fmtBytes(Math.max(0, mostPossible))} of audiobooks.${local}`,
+      text: `Too big for this drive: needs ${fmtBytes(bytes)}, but the drive can hold at most ${fmtBytes(Math.max(0, mostPossible))} of audiobooks.${local}`,
       free,
       shortBy: bytes - free,
     };
   }
   return {
     ok: false,
-    text: `Too big for the SD card right now: needs ${fmtBytes(bytes)}, but the card only has ${fmtBytes(Math.max(0, free))} free.${local}`,
+    text: `Too big for the drive right now: needs ${fmtBytes(bytes)}, but the drive only has ${fmtBytes(Math.max(0, free))} free.${local}`,
     free,
     shortBy: bytes - free,
   };
 }
 
 /** Star / Read / Not interested toggle buttons for a book. */
-function statusButtons(key, meta, rerender) {
+function statusButtons(key, meta, rerender, podcast = false) {
   const e = libEntry(key);
   const toggle = (label, iconName, active, patch) =>
     el('button', {
@@ -552,7 +677,7 @@ function statusButtons(key, meta, rerender) {
       },
     }, icon(iconName), label);
   return el('div', { class: 'toggles' },
-    toggle(e.starred ? 'Starred' : 'Star', e.starred ? 'star' : 'starOutline', !!e.starred, { starred: !e.starred }),
+    toggle(podcast ? (e.starred ? 'Following' : 'Follow') : e.starred ? 'Starred' : 'Star', e.starred ? 'star' : 'starOutline', !!e.starred, { starred: !e.starred }),
     toggle(e.status === 'read' ? 'Read' : 'Mark as read', 'check', e.status === 'read', { status: e.status === 'read' ? null : 'read' }),
     toggle('Not interested', 'ban', e.status === 'not_interested', { status: e.status === 'not_interested' ? null : 'not_interested' }));
 }
@@ -614,12 +739,33 @@ function selectNextThatFit(d, sel) {
   }
 }
 
+/** Podcasts: the newest episodes not on the card yet that fit (10 when there's no card). */
+function selectNewestThatFit(d, sel) {
+  const onCard = numbersOnCard(d.identifier);
+  const fit = fitInfo(0);
+  const budget = fit.noCard ? Infinity : Math.max(0, (fit.free || 0) - 5 * 1024 * 1024);
+  sel.numbers = new Set();
+  let used = 0;
+  for (let i = d.tracks.length - 1; i >= 0; i--) {
+    const t = d.tracks[i];
+    if (onCard.has(t.number)) continue;
+    if (fit.noCard ? sel.numbers.size >= 10 : used + t.size > budget) break;
+    sel.numbers.add(t.number);
+    used += t.size;
+  }
+}
+
 function renderBook(d) {
   const dlg = $('#bookDialog');
+  const podcast = d.kind === 'podcast';
+  const episodic = d.unit === 'episode';
+  // Episode list order, remembered per show: podcasts default to newest first,
+  // radio series to oldest first. (Display only: numbers and card order don't change.)
+  const order = episodic ? libEntry(d.identifier).episodeOrder || (podcast ? 'newest' : 'oldest') : 'oldest';
   state.dialogBook = d;
   const id = d.identifier;
   const total = d.tracks.length;
-  const meta = { title: d.title, author: d.author, source: state.sourceId, runtime: d.runtime, identifier: id };
+  const meta = { title: d.title, author: d.author, source: d.source || state.sourceId, runtime: d.kind === 'podcast' ? undefined : d.runtime, identifier: id };
   const loc = localBook(id);
   const pos = libEntry(id).position;
   const onCardNums = numbersOnCard(id);
@@ -633,10 +779,17 @@ function renderBook(d) {
   // when the whole thing won't fit, is already partly on the card, or is huge.
   if (!state.sel || state.sel.id !== id) state.sel = { id, mode: false, numbers: new Set(), anchor: null, auto: false };
   const sel = state.sel;
-  if (!sel.auto && total > 1 && (cardPartial || (!fitWhole.ok && !fitWhole.noCard) || total > 300)) {
+  if (podcast && !sel.seen) {
+    // opening a podcast marks its episodes as seen (clears "New episodes") and remembers its artwork
+    sel.seen = true;
+    rememberCover(id, d.cover);
+    state.podNew?.delete(id);
+    setLib(id, { seenUpTo: d.newest || 0, image: d.cover || undefined }, meta).then(refreshBadges).catch(() => {});
+  }
+  if (!sel.auto && total > 1 && (podcast || cardPartial || (!fitWhole.ok && !fitWhole.noCard) || total > 300)) {
     sel.auto = true;
     sel.mode = true;
-    selectNextThatFit(d, sel);
+    order === 'newest' ? selectNewestThatFit(d, sel) : selectNextThatFit(d, sel);
   }
 
   const desc = el('div', { class: 'description' }, d.description || 'No description available.');
@@ -653,8 +806,8 @@ function renderBook(d) {
   addFact(UnitTitle(d), total ? total.toLocaleString() : 'No MP3 files');
   addFact('Download size', d.totalBytes ? fmtBytes(d.totalBytes) : '');
   addFact('Language', langName(langKey(d.language)));
-  addFact('Published', d.date);
-  if (onCardNums.size) addFact('On the SD card', allOnCard ? `All ${unitWord(d)}` : `${onCardNums.size.toLocaleString()} of ${total.toLocaleString()} ${unitWord(d)}`);
+  addFact(podcast ? 'Newest episode' : 'Published', d.date);
+  if (onCardNums.size) addFact('On the drive', allOnCard ? `All ${unitWord(d)}` : `${onCardNums.size.toLocaleString()} of ${total.toLocaleString()} ${unitWord(d)}`);
   if (savedNums.size) addFact('On this computer', savedNums.size >= total ? `All ${unitWord(d)}` : `${savedNums.size.toLocaleString()} of ${total.toLocaleString()} ${unitWord(d)}`);
 
   let quality = null;
@@ -672,12 +825,13 @@ function renderBook(d) {
 
   // ---- chapter / episode list
   const list = el('ol', { class: `chapters ${sel.mode ? 'selectable' : ''}` },
-    d.tracks.map((t) =>
+    (order === 'newest' ? [...d.tracks].reverse() : d.tracks).map((t) =>
       el('li', { dataset: { n: t.number } },
         sel.mode ? el('input', { type: 'checkbox', checked: sel.numbers.has(t.number), tabindex: -1, 'aria-label': `Select ${t.title}` }) : null,
         el('span', { class: 'n' }, t.number),
         el('span', { class: 't' }, t.title,
-          onCardNums.has(t.number) ? el('span', { class: 'tag ok' }, 'On card') : null,
+          podcast && t.date ? el('span', { class: 'ep-date' }, new Date(t.date * 1000).toLocaleDateString()) : null,
+          onCardNums.has(t.number) ? el('span', { class: 'tag ok' }, 'On drive') : null,
           savedNums.has(t.number) ? el('span', { class: 'tag muted' }, 'Saved') : null),
         el('span', { class: 'd' }, fmtClock(t.seconds)))));
 
@@ -693,7 +847,7 @@ function renderBook(d) {
     summary.textContent = sel.numbers.size
       ? `${sel.numbers.size.toLocaleString()} ${unitWord(d, sel.numbers.size)} selected · ${fmtBytes(bytes)}${secs ? ` · ${fmtRuntime(secs)}` : ''}`
       : cardFull
-        ? `The SD card is full: there isn't room for the next ${unitWord(d, 1)} (${fmtBytes(next.size)}). Remove something from the card first.`
+        ? `The drive is full: there isn't room for the next ${unitWord(d, 1)} (${fmtBytes(next.size)}). Remove something from the drive first.`
         : 'Nothing selected yet.';
     footer.replaceWith((footer = buildFooter()));
   };
@@ -722,6 +876,10 @@ function renderBook(d) {
     const last = libEntry(id).lastCopied;
     selBar = el('div', { class: 'sel-bar' },
       el('div', { class: 'sel-buttons' },
+        episodic
+          ? el('button', { class: 'btn btn-secondary btn-small', onclick: () => { selectNewestThatFit(d, sel); syncChecks(); selectionChanged(); } },
+            fitWhole.noCard ? 'Newest 10' : 'Newest that fit')
+          : null,
         el('button', { class: 'btn btn-secondary btn-small', onclick: () => { selectNextThatFit(d, sel); syncChecks(); selectionChanged(); } },
           fitWhole.noCard ? `Select next 50` : 'Select next that fit'),
         el('button', { class: 'btn btn-secondary btn-small', onclick: () => { sel.numbers = new Set(d.tracks.map((t) => t.number)); syncChecks(); selectionChanged(); } }, 'All'),
@@ -736,14 +894,17 @@ function renderBook(d) {
               selectionChanged();
             },
           }, 'Select'))),
-      last ? el('div', { class: 'hint' }, `Last time you put ${unitWord(d)} up to #${last} on an SD card.`) : null,
+      last ? el('div', { class: 'hint' }, `Last time you put ${unitWord(d)} up to #${last} on a drive.`) : null,
       el('div', { class: 'hint' }, 'Tip: click one, then Shift-click another to select everything in between.'),
       summary);
   }
 
   // ---- footer actions
   const buildFooter = () => {
-    const parts = [el('button', { class: 'link', onclick: () => api.openExternal(d.url) }, 'View on archive.org'), el('span', { class: 'spacer' })];
+    const parts = [
+      d.url ? el('button', { class: 'link', onclick: () => api.openExternal(d.url) }, podcast ? 'Podcast website' : 'View on archive.org') : null,
+      el('span', { class: 'spacer' }),
+    ];
     const big = (cls, label, onclick, opts = {}) => el('button', { class: `btn ${cls} btn-big`, onclick, ...opts }, label);
 
     // Listen
@@ -772,11 +933,11 @@ function renderBook(d) {
         ? big('btn-secondary', [icon('computer'), `Save ${word(toSave.length)}`], (e) => saveLocal(sub(toSave, saveBytes), e.currentTarget), { title: 'Download to this computer' })
         : big('btn-secondary', sel.numbers.size ? 'Saved on computer' : 'Save to computer', null, { disabled: true }));
       if (!sel.numbers.size) parts.push(big('btn-primary', 'Choose some first', null, { disabled: true }));
-      else if (!toCard.length) parts.push(big('btn-primary', [icon('ok'), 'Already on the SD card'], null, { disabled: true }));
-      else if (fit.noCard) parts.push(big('btn-primary', [icon('plus'), 'Put on SD card'], null, { disabled: true }));
-      else if (fit.tooBig) parts.push(big('btn-primary', 'Too many for this SD card', null, { disabled: true }));
-      else if (!fit.ok) parts.push(big('btn-primary', 'Make room on the SD card…', () => openMakeRoom(sub(toCard, bytes))));
-      else parts.push(big('btn-primary', [icon('plus'), `Put ${word(toCard.length)} on SD card`], (e) => addBook(sub(toCard, bytes), e.currentTarget)));
+      else if (!toCard.length) parts.push(big('btn-primary', [icon('ok'), 'Already on the drive'], null, { disabled: true }));
+      else if (fit.noCard) parts.push(big('btn-primary', [icon('plus'), 'Put on drive'], null, { disabled: true }));
+      else if (fit.tooBig) parts.push(big('btn-primary', 'Too many for this drive', null, { disabled: true }));
+      else if (!fit.ok) parts.push(big('btn-primary', 'Make room on the drive…', () => openMakeRoom(sub(toCard, bytes))));
+      else parts.push(big('btn-primary', [icon('plus'), `Put ${word(toCard.length)} on drive`], (e) => addBook(sub(toCard, bytes), e.currentTarget)));
       return el('div', { class: 'dialog-foot' }, parts);
     }
 
@@ -787,15 +948,15 @@ function renderBook(d) {
     if (!loc) {
       parts.push(savingLocal
         ? big('btn-secondary', 'Saving to computer…', null, { disabled: true })
-        : big('btn-secondary', [icon('computer'), 'Save to computer'], (e) => saveLocal(d, e.currentTarget), { title: 'Download now and listen here, or copy to an SD card later' }));
+        : big('btn-secondary', [icon('computer'), 'Save to computer'], (e) => saveLocal(d, e.currentTarget), { title: 'Download now and listen here, or copy to a drive later' }));
     }
-    if (allOnCard && cb && (!cb.complete || cb.check?.status === 'problem')) parts.push(big('btn-primary', [icon('retry'), 'Repair on SD card'], () => { dlg.close(); repairBook(cb); }));
-    else if (allOnCard) parts.push(big('btn-primary', [icon('ok'), 'Already on the SD card'], null, { disabled: true }));
+    if (allOnCard && cb && (!cb.complete || cb.check?.status === 'problem')) parts.push(big('btn-primary', [icon('retry'), 'Repair on drive'], () => { dlg.close(); repairBook(cb); }));
+    else if (allOnCard) parts.push(big('btn-primary', [icon('ok'), 'Already on the drive'], null, { disabled: true }));
     else if (queued) parts.push(big('btn-primary', 'Downloading now…', null, { disabled: true }));
-    else if (fitWhole.noCard) parts.push(big('btn-primary', [icon('plus'), 'Put on SD card'], null, { disabled: true }));
-    else if (fitWhole.tooBig) parts.push(big('btn-primary', 'Too big for this SD card', null, { disabled: true }));
-    else if (!fitWhole.ok) parts.push(big('btn-primary', 'Make room on the SD card…', () => openMakeRoom(d)));
-    else parts.push(big('btn-primary', [icon('plus'), 'Put on SD card'], (e) => addBook(d, e.currentTarget)));
+    else if (fitWhole.noCard) parts.push(big('btn-primary', [icon('plus'), 'Put on drive'], null, { disabled: true }));
+    else if (fitWhole.tooBig) parts.push(big('btn-primary', 'Too big for this drive', null, { disabled: true }));
+    else if (!fitWhole.ok) parts.push(big('btn-primary', 'Make room on the drive…', () => openMakeRoom(d)));
+    else parts.push(big('btn-primary', [icon('plus'), 'Put on drive'], (e) => addBook(d, e.currentTarget)));
     return el('div', { class: 'dialog-foot' }, parts);
   };
   let footer = buildFooter();
@@ -819,17 +980,31 @@ function renderBook(d) {
         el('div', {},
           el('h2', {}, d.title),
           el('div', { class: 'detail-author' }, d.author || 'Unknown author'),
-          statusButtons(id, meta, () => renderBook(d)),
+          statusButtons(id, meta, () => renderBook(d), podcast),
           loc ? el('div', { class: 'fit ok' }, icon('computer'), loc.partial ? ' Partly saved on this computer' : ' Saved on this computer') : null,
           stopped,
           facts,
+          d.hiddenEpisodes
+            ? el('div', { class: 'notice-inline', style: { marginBottom: '12px' } },
+              `${d.hiddenEpisodes} ${d.hiddenEpisodes === 1 ? 'episode is' : 'episodes are'} in a format (like AAC or video) that many headphones can\u2019t play, so ${d.hiddenEpisodes === 1 ? 'it isn\u2019t' : 'they aren\u2019t'} shown.`)
+            : null,
           desc, moreBtn,
           quality,
           total
             ? [
                 el('div', { class: 'chapters-head' },
                   el('h3', {}, `${UnitTitle(d)} (${total.toLocaleString()})`),
-                  total > 1 ? el('button', { class: 'link', onclick: toggleMode }, sel.mode ? `Use all ${unitWord(d)}` : `Choose ${unitWord(d)}…`) : null),
+                  el('div', { class: 'chapters-tools' },
+                    episodic && total > 1
+                      ? el('select', {
+                        class: 'order-select',
+                        'aria-label': 'Episode order',
+                        onchange: (e) => setLib(id, { episodeOrder: e.target.value }, meta).then(() => renderBook(d)).catch(showError),
+                      },
+                      el('option', { value: 'newest', selected: order === 'newest' }, 'Newest first'),
+                      el('option', { value: 'oldest', selected: order === 'oldest' }, 'Oldest first'))
+                      : null,
+                    total > 1 ? el('button', { class: 'link', onclick: toggleMode }, sel.mode ? `Use all ${unitWord(d)}` : `Choose ${unitWord(d)}…`) : null)),
                 selBar,
                 list,
               ]
@@ -845,7 +1020,7 @@ async function saveLocal(d, btn) {
     btn.textContent = 'Starting…';
   }
   try {
-    await api.downloads.add({ identifier: d.identifier, quality: d.quality, source: state.sourceId, target: 'local', numbers: d.numbers || null });
+    await api.downloads.add({ identifier: d.identifier, quality: d.quality, source: d.source || state.sourceId, target: 'local', numbers: d.numbers || null });
     toast(`"${d.title}" is being saved to this computer. Find it under My library.`, 'success', { label: 'See progress', run: () => showView('downloads') });
     renderBook(d.base || d);
   } catch (err) {
@@ -869,9 +1044,9 @@ async function addBook(d, btn) {
     btn.textContent = 'Adding…';
   }
   try {
-    await api.downloads.add({ identifier: d.identifier, quality: d.quality, mount: state.mount, source: state.sourceId, numbers: d.numbers || null });
+    await api.downloads.add({ identifier: d.identifier, quality: d.quality, mount: state.mount, source: d.source || state.sourceId, numbers: d.numbers || null });
     $('#bookDialog').close();
-    toast(`"${d.title}" is downloading. It will be copied to the SD card automatically.`, 'success', {
+    toast(`"${d.title}" is downloading. It will be copied to the drive automatically.`, 'success', {
       label: 'See progress',
       run: () => showView('downloads'),
     });
@@ -914,7 +1089,7 @@ function openMakeRoom(d) {
   go.onclick = async () => {
     const names = books.filter((b) => selected.has(b.folder));
     const ok = await confirmBox({
-      title: `Remove ${names.length} ${names.length === 1 ? 'book' : 'books'} from the SD card?`,
+      title: `Remove ${names.length} ${names.length === 1 ? 'book' : 'books'} from the drive?`,
       text: names.map((b) => b.title).join(', ') + '. You can always download them again later.',
       ok: 'Remove',
       danger: true,
@@ -937,10 +1112,10 @@ function openMakeRoom(d) {
 
   dlg.replaceChildren(
     el('div', { class: 'dialog-body' },
-      el('h2', {}, 'Make room on the SD card'),
+      el('h2', {}, 'Make room on the drive'),
       el('p', { class: 'muted' },
         `"${d.title}" needs ${fmtBytes(d.totalBytes)}, but only ${fmtBytes(Math.max(0, fit.free || 0))} is free. ` +
-        'Choose books to remove from the card:'),
+        'Choose books to remove from the drive:'),
       books.length
         ? el('div', { class: 'room-list' },
           books.map((b) =>
@@ -948,9 +1123,9 @@ function openMakeRoom(d) {
               el('input', { type: 'checkbox', onchange: (e) => { e.target.checked ? selected.add(b.folder) : selected.delete(b.folder); update(); } }),
               el('span', { class: 't' }, b.title, b.author ? el('span', { class: 'muted' }, ` — ${b.author}`) : null),
               el('span', { class: 's' }, fmtBytes(b.size)))))
-        : el('p', {}, 'There are no audiobooks on this card to remove. The card is full of other files — try a bigger card, or remove files using your computer.'),
+        : el('p', {}, 'There are no audiobooks on this drive to remove. The drive is full of other files — try a bigger one, or remove files using your computer.'),
       books.length && books.reduce((a, b) => a + b.size, 0) < shortBy
-        ? el('p', { class: 'notice-inline' }, 'Even removing every audiobook would not free enough space. The rest of the card is used by other files, so this book needs a bigger SD card.')
+        ? el('p', { class: 'notice-inline' }, 'Even removing every audiobook would not free enough space. The rest of the drive is used by other files, so this book needs a bigger drive.')
         : null,
       status),
     el('div', { class: 'dialog-foot' },
@@ -962,7 +1137,7 @@ function openMakeRoom(d) {
 }
 
 // =========================================================================
-// SD card (sidebar + "On the SD card" view)
+// drive (sidebar + "On the drive" view)
 // =========================================================================
 
 function renderDrivePanel() {
@@ -974,9 +1149,9 @@ function renderDrivePanel() {
   if (!all.length) {
     area.replaceChildren(
       el('div', { class: 'drive-empty' },
-        el('strong', {}, 'No SD card found'),
-        el('span', { class: 'muted' }, 'Put the micro SD card in its adapter and plug it into the computer. It will show up here automatically.'),
-        el('button', { class: 'link', style: { textAlign: 'left' }, onclick: pickFolder }, 'Card not showing up? Choose it yourself…'))
+        el('strong', {}, 'No drive found'),
+        el('span', { class: 'muted' }, 'Plug in a drive, USB stick or MP3 player. It will show up here automatically.'),
+        el('button', { class: 'link', style: { textAlign: 'left' }, onclick: pickFolder }, 'Drive not showing up? Choose it yourself…'))
     );
     $('#usage').replaceChildren();
     return;
@@ -995,13 +1170,27 @@ function renderDrivePanel() {
         el('div', { class: 'drive-meta' }, `${fmtBytes(drive.total)} · ${drive.fs}${drive.manual ? ' · chosen by hand' : ''}`))
     );
     if (drive.fs && /exfat/i.test(drive.fs)) {
-      nodes.push(el('div', { class: 'notice-inline' }, 'This card is formatted as exFAT. Some headphones can only read FAT32 cards. If books won’t play, the card may need to be reformatted as FAT32.'));
+      nodes.push(el('div', { class: 'notice-inline' }, 'This drive is formatted as exFAT. Some headphones and players can only read FAT32. If books won’t play, the drive may need to be reformatted as FAT32.'));
     }
-    if (drive.readOnly) nodes.push(el('div', { class: 'notice-inline' }, 'This card is locked (read-only). Slide the lock switch on the SD adapter up and plug it in again.'));
+    if (drive.readOnly) nodes.push(el('div', { class: 'notice-inline' }, 'This drive is read-only. If it’s an SD card, slide the lock switch on its adapter up and plug it in again.'));
   }
-  nodes.push(el('button', { class: 'link', style: { textAlign: 'left', fontSize: '13px' }, onclick: pickFolder }, 'Use a different card or folder…'));
+  nodes.push(el('button', { class: 'link', style: { textAlign: 'left', fontSize: '13px' }, onclick: pickFolder }, 'Use a different drive or folder…'));
   area.replaceChildren(...nodes);
   renderUsage();
+}
+
+/** Space used on the drive, split by type of content. */
+function usageByType(c) {
+  const sizes = { books: 0, radio: 0, podcasts: 0, otherAudio: 0 };
+  for (const b of c.books) {
+    const src = b.identifier ? sourceOf(b.identifier, b.source) : null;
+    if (src === 'podcasts') sizes.podcasts += b.size;
+    else if (src === 'otr') sizes.radio += b.size;
+    else if (src) sizes.books += b.size;
+    else sizes.otherAudio += b.size; // folders copied onto the drive by hand
+  }
+  sizes.otherAudio += c.looseFiles.reduce((a, f) => a + f.size, 0);
+  return sizes;
 }
 
 function renderUsage() {
@@ -1016,17 +1205,26 @@ function renderUsage() {
   const free = Math.max(0, c.free - pending);
   const pct = (v) => `${Math.max(0, (v / total) * 100)}%`;
   const hours = Math.floor(free / BYTES_PER_HOUR);
+  const u = usageByType(c);
+  // [css class, label, bytes]; types with nothing on the drive are left out
+  const types = [
+    ['seg-books', 'Audiobooks', u.books],
+    ['seg-radio', 'Radio shows', u.radio],
+    ['seg-podcasts', 'Podcasts', u.podcasts],
+    ['seg-other-audio', 'Other audio', u.otherAudio],
+  ].filter(([, , bytes]) => bytes > 0);
+  const row = (cls, label, bytes, style) => [el('i', { class: cls, style }), label, el('span', { class: 'num' }, fmtBytes(bytes))];
   $('#usage').replaceChildren(
     el('div', { class: 'usage-free' }, fmtBytes(free), ' ', el('small', {}, 'free')),
-    el('div', { class: 'usage-bar', title: 'SD card space' },
-      el('span', { class: 'seg-books', style: { width: pct(c.booksSize) } }),
+    el('div', { class: 'usage-bar', title: 'Drive space' },
+      types.map(([cls, , bytes]) => el('span', { class: cls, style: { width: pct(bytes) } })),
       el('span', { class: 'seg-pending', style: { width: pct(pending) } }),
       el('span', { class: 'seg-other', style: { width: pct(c.otherSize) } })),
     el('div', { class: 'legend' },
-      el('i', { class: 'seg-books' }), 'Audiobooks', el('span', { class: 'num' }, fmtBytes(c.booksSize)),
-      pending ? [el('i', { class: 'seg-pending' }), 'Being added', el('span', { class: 'num' }, fmtBytes(pending))] : null,
-      el('i', { class: 'seg-other' }), 'Other files', el('span', { class: 'num' }, fmtBytes(c.otherSize)),
-      el('i', { style: { background: 'var(--surface)', border: '1px solid var(--border)' } }), 'Free', el('span', { class: 'num' }, fmtBytes(free))),
+      types.map(([cls, label, bytes]) => row(cls, label, bytes)),
+      pending ? row('seg-pending', 'Being added', pending) : null,
+      row('seg-other', 'Other files', c.otherSize),
+      row('', 'Free', free, { background: 'var(--surface)', border: '1px solid var(--border)' })),
     el('div', { class: 'hint' }, `Room for about ${hours.toLocaleString()} more ${hours === 1 ? 'hour' : 'hours'} of listening.`)
   );
 }
@@ -1061,6 +1259,7 @@ async function refreshCard() {
       const info = await api.card.list(state.mount);
       if (req !== cardReq) return;
       state.card = info;
+      for (const b of info.books) rememberCover(b.identifier, b.cover);
     } catch (err) {
       if (req !== cardReq) return;
       state.card = null;
@@ -1080,26 +1279,26 @@ function renderCardView() {
   const drive = currentDrive();
   if (!drive) {
     root.replaceChildren(
-      el('div', { class: 'state' }, el('h3', {}, 'No SD card plugged in'), el('div', {}, 'Plug in the SD card to see which audiobooks are on it.'))
+      el('div', { class: 'state' }, el('h3', {}, 'No drive plugged in'), el('div', {}, 'Plug in the drive to see which audiobooks are on it.'))
     );
     return;
   }
   const c = state.card;
   if (!c) {
-    root.replaceChildren(el('div', { class: 'state' }, el('div', { class: 'progress indeterminate' }, el('span')), 'Reading the SD card…'));
+    root.replaceChildren(el('div', { class: 'state' }, el('div', { class: 'progress indeterminate' }, el('span')), 'Reading the drive…'));
     return;
   }
 
   const head = el('div', { class: 'page-head' },
     el('div', {},
-      el('h1', {}, 'On the SD card'),
-      el('p', {}, `${c.books.length} ${c.books.length === 1 ? 'audiobook' : 'audiobooks'} on "${drive.label}" · ${fmtBytes(c.free)} free`)),
+      el('h1', {}, 'On the drive'),
+      el('p', {}, `${c.books.length} ${c.books.length === 1 ? 'title' : 'titles'} on "${drive.label}" · ${fmtBytes(c.free)} free`)),
     el('div', { class: 'head-actions' },
       c.books.some((b) => b.managed)
-        ? el('button', { class: 'btn btn-secondary', disabled: !!state.verifying, title: 'Read every chapter back from the card and make sure it matches the original', onclick: () => checkBooks() }, icon('check'), 'Check books')
+        ? el('button', { class: 'btn btn-secondary', disabled: !!state.verifying, title: 'Read every chapter back from the drive and make sure it matches the original', onclick: () => checkBooks() }, icon('check'), 'Check books')
         : null,
-      el('button', { class: 'btn btn-secondary', onclick: () => api.card.reveal(state.mount).catch(showError) }, icon('folder'), 'Open card in file browser'),
-      el('button', { class: 'btn btn-primary', onclick: () => showView('browse') }, icon('plus'), 'Add audiobooks')));
+      el('button', { class: 'btn btn-secondary', onclick: () => api.card.reveal(state.mount).catch(showError) }, icon('folder'), 'Open drive in file browser'),
+      el('button', { class: 'btn btn-primary', onclick: () => showView('browse') }, icon('plus'), 'Discover more')));
 
   const parts = [head];
 
@@ -1120,8 +1319,8 @@ function renderCardView() {
   if (problems.length && !state.verifying) {
     parts.push(
       el('div', { class: 'banner error' }, icon('warn'),
-        el('div', {}, el('strong', {}, `${problems.length} ${problems.length === 1 ? 'book has' : 'books have'} a problem on the card`),
-          'Press "Repair" to copy the book onto the card again.'))
+        el('div', {}, el('strong', {}, `${problems.length} ${problems.length === 1 ? 'book has' : 'books have'} a problem on the drive`),
+          'Press "Repair" to copy the book onto the drive again.'))
     );
   }
 
@@ -1135,9 +1334,9 @@ function renderCardView() {
   }
 
   if (!c.books.length && !c.looseFiles.length) {
-    parts.push(el('div', { class: 'state' }, el('h3', {}, 'This card has no audiobooks yet'),
-      el('div', {}, 'Find a book you like and press "Put on SD card".'),
-      el('button', { class: 'btn btn-primary btn-big', onclick: () => showView('browse') }, 'Find audiobooks')));
+    parts.push(el('div', { class: 'state' }, el('h3', {}, 'This drive has no audiobooks yet'),
+      el('div', {}, 'Find a book you like and press "Put on drive".'),
+      el('button', { class: 'btn btn-primary btn-big', onclick: () => showView('browse') }, 'Discover something to listen to')));
   } else {
     parts.push(el('div', { class: 'list' }, c.books.map((b, i) => bookRow(b, i))));
   }
@@ -1154,11 +1353,11 @@ function renderCardView() {
 
   parts.push(
     el('details', { class: 'explain' },
-      el('summary', {}, 'How are books arranged on the card?'),
+      el('summary', {}, 'How are books arranged on the drive?'),
       el('p', {}, 'Each audiobook gets its own folder named after the book, and every chapter is numbered (001, 002, 003…) so it plays in the right order.'),
-      el('p', {}, 'Many headphones and MP3 players ignore file names and play files in the order they were saved to the card. This app always copies chapters one at a time, in order. If you remove books or copy files by hand, use "Fix play order" to put everything back in order. Books are listed here in the order the headphones will see them.'))
+      el('p', {}, 'Many headphones and MP3 players ignore file names and play files in the order they were saved to the drive. This app always copies chapters one at a time, in order. If you remove books or copy files by hand, use "Fix play order" to put everything back in order. Books are listed here in the order the headphones will see them.'))
   );
-  root.replaceChildren(...parts);
+  root.replaceChildren(...parts.filter(Boolean));
 }
 
 function bookRow(b, i) {
@@ -1169,18 +1368,18 @@ function bookRow(b, i) {
   const sub = [b.author, count, fmtBytes(b.size)].filter(Boolean).join(' · ');
   return el('div', { class: 'row' },
     el('div', { class: 'order' }, i + 1),
-    coverEl(b.identifier, b.title, b.author),
+    toDetails(coverEl(b.identifier, b.title, b.author), b.identifier, b),
     el('div', {},
-      el('div', { class: 'row-title' }, b.title,
+      toDetails(el('div', { class: 'row-title' }, b.title,
         libEntry(b.identifier || `folder:${b.folder}`).status === 'read' ? el('span', { class: 'tag ok' }, 'Read') : null,
         !b.inOrder ? el('span', { class: 'tag warn' }, 'Out of order') : null,
         !b.complete ? el('span', { class: 'tag error' }, 'Incomplete') : null,
         b.check?.status === 'ok' ? el('span', { class: 'tag ok', title: `Every chapter matches (checked against ${b.check.checkedFrom})` }, '✓ Checked') : null,
         b.check?.status === 'problem' ? el('span', { class: 'tag error' }, 'Problem') : null,
-        b.check?.status === 'unknown' ? el('span', { class: 'tag muted', title: b.check.problems.join(' ') }, 'Can’t check') : null),
-      el('div', { class: 'row-sub' }, sub),
+        b.check?.status === 'unknown' ? el('span', { class: 'tag muted', title: b.check.problems.join(' ') }, 'Can’t check') : null), b.identifier, b),
+      el('div', { class: 'row-sub' }, sourceTag(b.identifier, b.source), sub),
       b.check?.status === 'problem' ? el('div', { class: 'row-problem' }, b.check.problems.slice(0, 3).join(' ')) : null,
-      !b.complete && b.expectedChapters ? el('div', { class: 'row-problem' }, `Only ${b.chapters} of ${b.expectedChapters} chapters are on the card.`) : null),
+      !b.complete && b.expectedChapters ? el('div', { class: 'row-problem' }, `Only ${b.chapters} of ${b.expectedChapters} chapters are on the drive.`) : null),
     el('div', { class: 'row-actions' },
       b.identifier && (!b.complete || b.check?.status === 'problem')
         ? el('button', { class: 'btn btn-primary btn-small', onclick: () => repairBook(b) }, icon('retry'), 'Repair')
@@ -1216,8 +1415,8 @@ async function repairBook(b) {
   const ok = await confirmBox({
     title: `Repair "${b.title}"?`,
     text: localBook(b.identifier)
-      ? 'The book will be removed from the SD card and copied again from this computer.'
-      : 'The book will be removed from the SD card and downloaded again.',
+      ? 'The book will be removed from the drive and copied again from this computer.'
+      : 'The book will be removed from the drive and downloaded again.',
     ok: 'Repair',
   });
   if (!ok) return;
@@ -1234,7 +1433,7 @@ async function repairBook(b) {
 
 async function removeBook(b) {
   const ok = await confirmBox({
-    title: `Remove "${b.title}" from the SD card?`,
+    title: `Remove "${b.title}" from the drive?`,
     text: `This frees up ${fmtBytes(b.size)}. You can download it again any time.`,
     ok: 'Remove book',
     danger: true,
@@ -1251,7 +1450,7 @@ async function removeBook(b) {
 }
 
 async function removeLoose(f) {
-  const ok = await confirmBox({ title: `Remove "${f.name}"?`, text: 'This file will be deleted from the SD card.', ok: 'Remove', danger: true });
+  const ok = await confirmBox({ title: `Remove "${f.name}"?`, text: 'This file will be deleted from the drive.', ok: 'Remove', danger: true });
   if (!ok) return;
   try {
     await api.card.removeFile(state.mount, f.name);
@@ -1269,7 +1468,7 @@ async function fixOrder(btn) {
   }
   try {
     await api.card.fixOrder(state.mount);
-    toast('Play order fixed. Everything on the card is now in order.', 'success');
+    toast('Play order fixed. Everything on the drive is now in order.', 'success');
   } catch (err) {
     showError(err);
   }
@@ -1284,9 +1483,9 @@ async function ejectCard() {
   btn.disabled = true;
   try {
     const msg = await api.drives.eject(drive.mount);
-    await confirmBox({ title: 'SD card ejected', text: `${msg} Put it back in the headphones and enjoy!`, ok: 'OK', cancel: null });
+    await confirmBox({ title: 'Drive ejected', text: `${msg} Put it back in the headphones and enjoy!`, ok: 'OK', cancel: null });
   } catch (err) {
-    await confirmBox({ title: 'Could not eject the SD card', text: err.message, ok: 'OK', cancel: null });
+    await confirmBox({ title: 'Could not eject the drive', text: err.message, ok: 'OK', cancel: null });
   } finally {
     btn.disabled = false;
   }
@@ -1330,7 +1529,7 @@ function renderDownloads() {
   const root = $('#downloadsView');
   const parts = [
     el('div', { class: 'page-head' },
-      el('div', {}, el('h1', {}, 'Downloads'), el('p', {}, 'Books are downloaded from the internet, then copied to the SD card in the right order.')),
+      el('div', {}, el('h1', {}, 'Downloads'), el('p', {}, 'Books are downloaded from the internet, then copied to the drive in the right order.')),
       s.jobs.some((j) => ['done', 'error', 'cancelled'].includes(j.status))
         ? el('button', { class: 'btn btn-secondary', onclick: () => api.downloads.clear() }, 'Clear finished')
         : null),
@@ -1345,17 +1544,17 @@ function renderDownloads() {
         el('div', { class: 'progress' }, el('span', { style: { width: `${(s.queueProgress * 100).toFixed(1)}%` } })),
         el('label', { class: 'check' },
           el('input', { type: 'checkbox', checked: state.autoEject, onchange: (e) => { state.autoEject = e.target.checked; api.downloads.setAutoEject(state.autoEject); } }),
-          'Eject the SD card automatically when everything is finished'))
+          'Eject the drive automatically when everything is finished'))
     );
   }
 
   if (!s.jobs.length) {
-    parts.push(el('div', { class: 'state' }, el('h3', {}, 'Nothing downloading'), el('div', {}, 'Books you add to the SD card will show up here while they download.'),
-      el('button', { class: 'btn btn-primary', onclick: () => showView('browse') }, 'Find audiobooks')));
+    parts.push(el('div', { class: 'state' }, el('h3', {}, 'Nothing downloading'), el('div', {}, 'Books you add to the drive will show up here while they download.'),
+      el('button', { class: 'btn btn-primary', onclick: () => showView('browse') }, 'Discover something to listen to')));
   } else {
     parts.push(el('div', { class: 'list' }, [...s.jobs].reverse().map(jobRow)));
   }
-  root.replaceChildren(...parts);
+  root.replaceChildren(...parts.filter(Boolean));
 }
 
 function jobRow(j) {
@@ -1386,11 +1585,12 @@ function jobRow(j) {
   }
 
   return el('div', { class: `row job ${j.status}` },
-    coverEl(j.identifier, j.title, j.author),
+    toDetails(coverEl(j.identifier, j.title, j.author), j.identifier, j),
     el('div', {},
-      el('div', { class: 'row-title' }, j.title),
+      toDetails(el('div', { class: 'row-title' }, j.title), j.identifier, j),
+      el('div', { class: 'row-sub' }, sourceTag(j.identifier, j.source)),
       el('div', { class: 'status' },
-        j.status === 'done' ? el('span', { style: { color: 'var(--ok)', fontWeight: 600 } }, j.toCard ? '✓ On the SD card' : '✓ Saved on this computer') : j.message),
+        j.status === 'done' ? el('span', { style: { color: 'var(--ok)', fontWeight: 600 } }, j.toCard ? '✓ On the drive' : '✓ Saved on this computer') : j.message),
       ['downloading', 'copying', 'waiting', 'done'].includes(j.status)
         ? el('div', { class: 'progress' }, el('span', { style: { width: `${pct.toFixed(1)}%` } }))
         : null,
@@ -1508,10 +1708,12 @@ async function init() {
   state.show = state.settings.show || 'all';
   $('#show').value = state.show;
   state.lib = await api.library.state();
+  for (const [key, e] of Object.entries(state.lib)) rememberCover(key, e.image);
   updateStarCount();
   initPlayer();
   refreshLocal();
   state.sources = await api.catalog.sources();
+  await initPodcasts();
   state.genres = await api.catalog.genres();
   state.update = await api.updates.status();
   renderUpdateBanner();

@@ -4,6 +4,7 @@ const { app, BrowserWindow, ipcMain, dialog, shell, Notification, Menu, nativeIm
 const path = require('node:path');
 const os = require('node:os');
 const fs = require('node:fs/promises');
+const fsSync = require('node:fs');
 const catalog = require('./catalog');
 const drives = require('./drives');
 const sdcard = require('./sdcard');
@@ -14,6 +15,11 @@ const libstate = require('./libstate');
 const media = require('./media');
 const verify = require('./verify');
 const updater = require('./updater');
+const podcasts = require('./podcasts');
+
+/** Book or podcast details, depending on the id. */
+const getDetails = (identifier, quality) =>
+  podcasts.isPodcast(identifier) ? podcasts.getDetails(identifier) : catalog.getDetails(identifier, quality);
 
 // "Check books" results per card: mount -> Map(folder -> result)
 const checks = new Map();
@@ -24,9 +30,47 @@ function forgetCheck(mount, folder) {
 
 media.registerScheme(); // must happen before the app is ready
 
-const APP_NAME = 'Audiobook SD Loader';
+const APP_NAME = 'ListenSync';
+const OLD_NAME = 'Audiobook SD Loader'; // name before v1.2
 const ICON = path.join(__dirname, '..', 'assets', 'icon.png');
-app.setName(APP_NAME); // menus, About panel and notifications use this
+app.setName(APP_NAME); // menus, About panel, notifications and the settings folder use this
+migrateSettingsFolder();
+
+/**
+ * The app was called "Audiobook SD Loader" before v1.2. Copy its settings,
+ * library (stars, positions…) and catalog cache to the new settings folder
+ * the first time ListenSync starts. The old folder is left as a backup.
+ */
+function migrateSettingsFolder() {
+  try {
+    const appData = app.getPath('appData');
+    const oldDir = path.join(appData, OLD_NAME);
+    const newDir = path.join(appData, APP_NAME);
+    const alreadyMigrated = ['settings.json', 'library.json'].some((f) => fsSync.existsSync(path.join(newDir, f)));
+    if (!fsSync.existsSync(oldDir) || alreadyMigrated) return;
+    fsSync.mkdirSync(newDir, { recursive: true });
+    for (const name of ['settings.json', 'library.json', 'cache']) {
+      const src = path.join(oldDir, name);
+      if (fsSync.existsSync(src)) fsSync.cpSync(src, path.join(newDir, name), { recursive: true });
+    }
+  } catch (err) {
+    console.error('Could not copy settings from the old app name:', err);
+  }
+}
+
+/** Books saved on the computer move from Music/Audiobook SD Loader to Music/ListenSync. */
+function migrateMusicFolder() {
+  const music = app.getPath('music');
+  const oldDir = path.join(music, OLD_NAME);
+  const newDir = path.join(music, APP_NAME);
+  try {
+    if (fsSync.existsSync(oldDir) && !fsSync.existsSync(newDir)) fsSync.renameSync(oldDir, newDir);
+  } catch (err) {
+    console.error('Could not move the saved books folder:', err);
+    return oldDir; // keep using the old folder rather than losing track of saved books
+  }
+  return newDir;
+}
 
 let win = null;
 let downloader = null;
@@ -41,9 +85,9 @@ function send(channel, payload) {
 
 /** Only allow card operations on drives we detected or folders the user picked. */
 function checkMount(mount) {
-  if (typeof mount !== 'string') throw new Error('No SD card selected.');
+  if (typeof mount !== 'string') throw new Error('No drive selected.');
   if (knownDrives.some((d) => d.mount === mount) || manualMounts.has(mount)) return mount;
-  throw new Error('That SD card is no longer connected.');
+  throw new Error('That drive is no longer connected.');
 }
 
 function createWindow() {
@@ -52,7 +96,7 @@ function createWindow() {
     height: 840,
     minWidth: 980,
     minHeight: 640,
-    title: 'Audiobook SD Loader',
+    title: APP_NAME,
     backgroundColor: '#f7f3ec',
     icon: ICON, // Windows/Linux window icon
     webPreferences: {
@@ -77,7 +121,7 @@ function createWindow() {
       defaultId: 0,
       cancelId: 0,
       message: 'Audiobooks are still downloading or copying.',
-      detail: 'If you quit now, unfinished books will not be put on the SD card. You can add them again later.',
+      detail: 'If you quit now, unfinished books will not be put on the drive. You can add them again later.',
     });
     if (choice === 0) e.preventDefault();
   });
@@ -86,7 +130,7 @@ function createWindow() {
 function openExternal(url) {
   try {
     const u = new URL(url);
-    if (u.protocol === 'https:' && /(^|\.)(archive\.org|librivox\.org)$/.test(u.hostname)) shell.openExternal(u.toString());
+    if (u.protocol === 'https:') shell.openExternal(u.toString());
   } catch {
     /* ignore bad urls */
   }
@@ -115,7 +159,7 @@ async function pollDrives(force = false) {
 
 async function ejectMount(mount) {
   const drive = knownDrives.find((d) => d.mount === mount);
-  if (!drive) throw new Error('Only detected SD cards can be ejected. Use your computer to eject this one.');
+  if (!drive) throw new Error('Only detected drives can be ejected. Use your computer to eject this one.');
   if (downloader.pendingBytes(mount) > 0) throw new Error('Please wait until all books have finished copying.');
   const msg = await drives.eject(drive);
   await pollDrives(true);
@@ -154,12 +198,16 @@ function registerIpc() {
     }
     return data;
   });
-  handle('book:details', (identifier, quality) => catalog.getDetails(identifier, quality));
+  handle('book:details', (identifier, quality) => getDetails(identifier, quality));
+  handle('podcasts:info', () => ({ directory: podcasts.usingPI() ? 'Podcast Index' : 'Apple Podcasts', categories: podcasts.categories() }));
+  handle('podcasts:search', (term, opts) => podcasts.search(term, opts));
+  handle('podcasts:trending', (opts) => podcasts.trending(opts));
+  handle('podcasts:latest', (ids) => podcasts.latest(ids));
 
   handle('drives:list', () => pollDrives(true));
   handle('drives:pickFolder', async () => {
     const r = await dialog.showOpenDialog(win, {
-      title: 'Choose the SD card (or a folder on it)',
+      title: 'Choose the drive (or a folder on it)',
       properties: ['openDirectory', 'createDirectory'],
     });
     if (r.canceled || !r.filePaths[0]) return null;
@@ -218,7 +266,7 @@ function registerIpc() {
 
   handle('downloads:state', () => downloader.snapshot());
   /**
-   * target 'card': put a book on the SD card (copied from the local library
+   * target 'card': put a book on the drive (copied from the local library
    * when it's already there, otherwise downloaded). target 'local': save it
    * on this computer only.
    */
@@ -228,7 +276,7 @@ function registerIpc() {
     }
     const existing = await local.find(identifier, quality);
     if (target === 'local') {
-      let details = selectTracks(await catalog.getDetails(identifier, existing?.meta.quality || quality), numbers);
+      let details = selectTracks(await getDetails(identifier, existing?.meta.quality || quality), numbers);
       if (existing) {
         // only download what isn't saved yet
         const have = new Set(existing.meta.tracks.map((t) => t.number));
@@ -240,7 +288,7 @@ function registerIpc() {
       if (details.totalBytes + 200 * 1024 * 1024 > free) {
         throw new Error('There is not enough free space on this computer to save this book.');
       }
-      return downloader.add(details, { source, toCard: false });
+      return downloader.add(details, { source: details.source || source, toCard: false });
     }
     checkMount(mount);
     const drive = knownDrives.find((d) => d.mount === mount) || manualMounts.get(mount);
@@ -251,14 +299,14 @@ function registerIpc() {
     const details =
       existing && wanted.every((n) => have.has(n))
         ? selectTracks(detailsFromLocal(existing.meta), numbers)
-        : selectTracks(await catalog.getDetails(identifier, existing?.meta.quality || quality), numbers);
+        : selectTracks(await getDetails(identifier, existing?.meta.quality || quality), numbers);
     const { free } = await drives.space(mount);
     if (details.totalBytes + downloader.pendingBytes(mount) > free) throw new Error('NO_SPACE');
     touchedMounts.add(mount);
     return downloader.add(details, {
       mount,
-      driveLabel: drive?.label || 'SD card',
-      source: source || existing?.meta.source,
+      driveLabel: drive?.label || 'Drive',
+      source: details.source || existing?.meta.source || source,
       toCard: true,
       splitMinutes: Number(settings.get().splitMinutes) || 0,
     });
@@ -333,20 +381,20 @@ async function onQueueIdle() {
 
   let text = failed
     ? `${failed} book${failed === 1 ? '' : 's'} could not be copied. See the Downloads tab.`
-    : 'All audiobooks have been copied to the SD card.';
+    : 'All audiobooks have been copied to the drive.';
   if (autoEject && !failed && mounts.length && added) {
     try {
       for (const m of mounts) await ejectMount(m);
-      text += ' The SD card has been ejected and can be removed now.';
+      text += ' The drive has been ejected and can be removed now.';
       send('card:ejected', {});
     } catch (err) {
-      text += ` The card could not be ejected automatically: ${err.message}`;
+      text += ` The drive could not be ejected automatically: ${err.message}`;
     }
   }
   if (!mounts.length) return;
   send('app:notice', { kind: failed ? 'error' : 'success', text });
   if (Notification.isSupported() && !win?.isFocused()) {
-    new Notification({ title: 'Audiobook SD Loader', body: text }).show();
+    new Notification({ title: APP_NAME, body: text }).show();
   }
 }
 
@@ -355,14 +403,14 @@ async function onQueueIdle() {
 /**
  * macOS menu bar. (When running from source with `npm start`, macOS still
  * shows "Electron" as the bold app name because that comes from the Electron
- * binary; the packaged app shows "Audiobook SD Loader".)
+ * binary; the packaged app shows "ListenSync".)
  */
 function setupMenuAndAbout() {
   app.setAboutPanelOptions({
     applicationName: APP_NAME,
     applicationVersion: app.getVersion(),
     version: '',
-    copyright: 'Audiobooks from LibriVox and the Internet Archive',
+    copyright: 'Audiobooks from LibriVox and the Internet Archive. Not affiliated with either.',
     iconPath: ICON,
   });
   if (process.platform !== 'darwin') return;
@@ -403,10 +451,17 @@ app.whenReady().then(() => {
   settings.init(userData);
   catalog.init(path.join(userData, 'cache'));
   libstate.init(userData);
-  local.init(path.join(app.getPath('music'), 'Audiobook SD Loader'));
-  local.cleanupPartial();
+  local.init(migrateMusicFolder());
+  local.migrateNames().then(() => local.cleanupPartial());
   fs.rm(path.join(os.tmpdir(), 'audiobook-sd-loader'), { recursive: true, force: true }).catch(() => {}); // v1.0 temp folder
   media.handleProtocol();
+  podcasts.useAnchorStore({
+    get: (id) => libstate.all()[id]?.podAnchor || null,
+    set: (id, anchor) => {
+      const cur = libstate.all()[id]?.podAnchor;
+      if (!cur || cur.date !== anchor.date || cur.number !== anchor.number) libstate.update(id, { podAnchor: anchor });
+    },
+  });
   downloader = new Downloader();
   downloader.on('localChanged', () => send('local:changed', {}));
   downloader.on('change', (snap) => send('downloads:changed', snap));
@@ -448,19 +503,20 @@ function withTracks(details, tracks) {
   return { ...details, tracks, totalBytes: tracks.reduce((a, t) => a + (t.size || 0), 0) };
 }
 
-/** Turn a local library book.json back into the shape catalog.getDetails returns. */
+/** Turn a saved book's listensync.json back into the shape catalog.getDetails returns. */
 function detailsFromLocal(meta) {
   return {
     identifier: meta.identifier,
     title: meta.title,
     author: meta.author,
-    cover: `https://archive.org/services/img/${meta.identifier}`,
     format: meta.format,
     quality: meta.quality,
     runtime: meta.runtime,
+    kind: meta.kind,
+    cover: meta.cover || `https://archive.org/services/img/${meta.identifier}`,
     unit: meta.unit,
     trackTotal: meta.trackTotal,
-    tracks: meta.tracks.map(({ name, size, md5, title, seconds, number }) => ({ name, size, md5, title, seconds, number })),
+    tracks: meta.tracks.map(({ name, url, size, approxSize, md5, title, seconds, number }) => ({ name, url, size, approxSize, md5, title, seconds, number })),
     totalBytes: meta.tracks.reduce((a, t) => a + (t.size || 0), 0),
   };
 }

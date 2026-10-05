@@ -58,6 +58,12 @@ contextBridge.exposeInMainWorld('api', {
     setAutoEject: (v) => call('downloads:setAutoEject', v),
     onChange: (cb) => on('downloads:changed', cb),
   },
+  podcasts: {
+    info: () => call('podcasts:info'),
+    search: (term, opts) => call('podcasts:search', term, opts),
+    trending: (opts) => call('podcasts:trending', opts),
+    latest: (ids) => call('podcasts:latest', ids),
+  },
   library: {
     state: () => call('library:state'),
     update: (key, patch) => call('library:update', key, patch),

@@ -5,7 +5,7 @@
  *   1. download every chapter into the local library folder (3 at a time;
  *      chapters already there are skipped, so a book saved on the computer
  *      is copied to a card without downloading it again),
- *   2. (card jobs) copy the chapters to the SD card one by one, in play order.
+ *   2. (card jobs) copy the chapters to the drive one by one, in play order.
  * Downloading to the computer first lets us download in parallel while still
  * writing to the card in strict order (see sdcard.js for why order matters),
  * and means a slow or flaky connection never leaves half a book on the card.
@@ -70,7 +70,8 @@ class Downloader extends EventEmitter {
     return new Set(
       this.jobs
         .filter((j) => ['queued', 'downloading', 'copying', 'waiting'].includes(j.status))
-        .map((j) => path.basename(local.dirFor(j.identifier, j.quality)))
+        .map((j) => (j.localDir ? path.basename(j.localDir) : local.knownDirName(j.identifier, j.quality)))
+        .filter(Boolean)
     );
   }
 
@@ -90,6 +91,7 @@ class Downloader extends EventEmitter {
       trackTotal: details.trackTotal || details.tracks.length,
       partial: details.tracks.length < (details.trackTotal || details.tracks.length),
       unit: details.unit || 'chapter',
+      kind: details.kind || 'book',
       runtime: details.runtime || null,
       totalBytes: details.totalBytes,
       toCard,
@@ -209,7 +211,15 @@ class Downloader extends EventEmitter {
   async _run(job) {
     job.ctrl = new AbortController();
     const signal = job.ctrl.signal;
-    const dir = local.dirFor(job.identifier, job.quality);
+    let dir;
+    try {
+      dir = await local.dirFor(job.identifier, job.quality, job.title, job.author);
+    } catch (err) {
+      Object.assign(job, { status: 'error', error: err.message, message: 'Something went wrong', ctrl: null });
+      this._changed();
+      return;
+    }
+    job.localDir = dir;
     const n = job.tracks.length;
     // Files are named by their number in the full book, so batches saved at
     // different times sit side by side in the same folder.
@@ -227,12 +237,14 @@ class Downloader extends EventEmitter {
       await fs.mkdir(dir, { recursive: true });
       await this._downloadAll(job, localFiles, signal);
       if (job.keepLocal) {
-        // Add these tracks to the saved copy (book.json marks the download as complete).
+        // Add these tracks to the saved copy (listensync.json marks the download as complete).
         const byNumber = new Map((saved?.tracks || []).map((t) => [t.number, t]));
         job.tracks.forEach((t, i) =>
           byNumber.set(t.number || i + 1, {
             number: t.number || i + 1,
             name: t.name,
+            url: t.url || undefined,
+            approxSize: t.approxSize || undefined,
             size: t.size,
             md5: t.md5 || null,
             title: t.title,
@@ -247,6 +259,8 @@ class Downloader extends EventEmitter {
           author: job.author,
           format: job.format,
           quality: job.quality,
+          kind: job.kind,
+          cover: job.cover,
           unit: job.unit,
           runtime: job.runtime,
           trackTotal: job.trackTotal,
@@ -270,7 +284,7 @@ class Downloader extends EventEmitter {
       while (!fsSync.existsSync(job.mount)) {
         signal.throwIfAborted();
         job.status = 'waiting';
-        job.message = `Downloaded. Waiting for the SD card "${job.driveLabel}" to be plugged in…`;
+        job.message = `Downloaded. Waiting for the drive "${job.driveLabel}" to be plugged in…`;
         job.eta = null;
         this._changed();
         await sleep(2000);
@@ -278,7 +292,7 @@ class Downloader extends EventEmitter {
 
       const { free } = await space(job.mount);
       if (free < job.totalBytes + 1024 * 1024) {
-        throw new Error('There is not enough free space on the SD card. Remove a book from the card, then press Try again.');
+        throw new Error('There is not enough free space on the drive. Remove a book from the drive, then press Try again.');
       }
 
       // ---- Phase 2: copy to the card, strictly in order
@@ -299,6 +313,8 @@ class Downloader extends EventEmitter {
           tracks: job.tracks,
           trackTotal: job.trackTotal,
           unit: job.unit,
+          kind: job.kind,
+          cover: job.cover,
         },
         localFiles,
         {
@@ -311,14 +327,14 @@ class Downloader extends EventEmitter {
               bytesThisFile -= sizes[fileIdx];
               fileIdx++;
             }
-            job.message = `Copying ${job.unit} ${fileIdx + 1} of ${n} to the SD card`;
+            job.message = `Copying ${job.unit} ${fileIdx + 1} of ${n} to the drive`;
             this._changed();
           },
         }
       );
       job.totalBytes = job.copied;
       job.status = 'done';
-      job.message = 'On the SD card';
+      job.message = 'On the drive';
       job.eta = 0;
       job.finishedAt = Date.now();
       this.emit('bookAdded', job);
@@ -348,7 +364,7 @@ class Downloader extends EventEmitter {
       return;
     }
     for (const n of await fs.readdir(dir).catch(() => [])) {
-      if (n !== 'book.json' && !keepFiles.has(n)) await fs.rm(path.join(dir, n), { force: true }).catch(() => {});
+      if (n !== 'listensync.json' && n !== 'book.json' && !keepFiles.has(n)) await fs.rm(path.join(dir, n), { force: true }).catch(() => {});
     }
   }
 
@@ -387,13 +403,14 @@ class Downloader extends EventEmitter {
   async _downloadFile(job, i, dest, signal, setBytes) {
     const track = job.tracks[i];
     const existing = await fs.stat(dest).catch(() => null);
-    if (existing && (track.size ? existing.size === track.size : existing.size > 0)) {
+    if (existing && (track.size && !track.approxSize ? existing.size === track.size : existing.size > 0)) {
       setBytes(existing.size);
       return;
     }
+    // podcast episodes come straight from the publisher; books from archive.org
     const url =
-      `https://archive.org/download/${encodeURIComponent(job.identifier)}/` +
-      track.name.split('/').map(encodeURIComponent).join('/');
+      track.url ||
+      `https://archive.org/download/${encodeURIComponent(job.identifier)}/` + track.name.split('/').map(encodeURIComponent).join('/');
     const part = dest + '.part';
     let lastErr;
     for (let attempt = 0; attempt < 4; attempt++) {
@@ -418,7 +435,8 @@ class Downloader extends EventEmitter {
           },
         });
         await pipeline(Readable.fromWeb(res.body), counter, fsSync.createWriteStream(part), { signal: both });
-        if (track.size && got !== track.size) throw new Error(`Incomplete download of "${track.title}"`);
+        if (track.size && !track.approxSize && got !== track.size) throw new Error(`Incomplete download of "${track.title}"`);
+        if (!got) throw new Error(`"${track.title}" downloaded as an empty file`);
         // archive.org publishes an MD5 for every file; a mismatch means a damaged download, so retry
         if (track.md5 && hash.digest('hex') !== track.md5) throw new Error(`"${track.title}" was damaged while downloading`);
         await fs.rename(part, dest);

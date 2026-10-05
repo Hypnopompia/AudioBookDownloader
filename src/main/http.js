@@ -1,6 +1,9 @@
 'use strict';
 
-const UA = 'AudiobookSDLoader/1.0 (personal family use; +https://archive.org/details/librivoxaudio)';
+const { version } = require('../../package.json');
+
+// Identifies the app to archive.org, with a link to reach the maintainer.
+const UA = `ListenSync/${version} (+https://github.com/Hypnopompia/ListenSync)`;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 

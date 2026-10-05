@@ -55,6 +55,11 @@ function update(key, patch = {}) {
   for (const k of ['title', 'author', 'source', 'identifier']) if (str(patch[k]) !== undefined) next[k] = str(patch[k]);
   if (Number.isFinite(patch.runtime)) next.runtime = patch.runtime;
   if (Number.isInteger(patch.lastCopied)) next.lastCopied = patch.lastCopied; // highest track number copied to a card
+  if (typeof patch.image === 'string' && /^https:\/\//.test(patch.image)) next.image = patch.image.slice(0, 1000); // podcast artwork
+  if (Number.isFinite(patch.seenUpTo)) next.seenUpTo = patch.seenUpTo; // newest podcast episode date the user has seen
+  if (patch.episodeOrder === 'newest' || patch.episodeOrder === 'oldest') next.episodeOrder = patch.episodeOrder; // list order for a show
+  const a = patch.podAnchor; // podcast episode numbering anchor (see podcasts.js)
+  if (a && Number.isFinite(a.date) && Number.isInteger(a.number)) next.podAnchor = { date: a.date, number: a.number };
   if ('position' in patch) {
     const p = patch.position;
     next.position =

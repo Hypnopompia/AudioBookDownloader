@@ -13,7 +13,7 @@ const path = require('node:path');
 const root = path.join(__dirname, '..');
 const { version } = require(path.join(root, 'package.json'));
 const tag = `v${version}`;
-const repo = 'Hypnopompia/AudioBookDownloader';
+const repo = 'Hypnopompia/ListenSync';
 const run = (cmd, args, opts = {}) => execFileSync(cmd, args, { cwd: root, stdio: 'inherit', ...opts });
 const gh = (...args) => execFileSync('gh', args, { cwd: root, encoding: 'utf8' }).trim();
 
@@ -34,6 +34,8 @@ if (!existing) {
   console.log(`Creating draft release ${tag}…`);
   gh('release', 'create', tag, '-R', repo, '--draft', '--title', version, '--target', 'main', '--generate-notes');
 }
+
+run('node', ['scripts/write-secrets.js']); // bundle API keys from .env (never committed)
 
 console.log('Building and uploading…');
 run('npx', ['electron-builder', '--mac', '--win', '--publish', 'always'], {

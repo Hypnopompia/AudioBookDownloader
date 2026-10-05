@@ -16,7 +16,7 @@ const { app, shell } = require('electron');
 const { execFile } = require('node:child_process');
 const path = require('node:path');
 
-const RELEASES_URL = 'https://github.com/Hypnopompia/AudioBookDownloader/releases/latest';
+const RELEASES_URL = 'https://github.com/Hypnopompia/ListenSync/releases/latest';
 const CHECK_EVERY_MS = 6 * 3600 * 1000;
 
 let autoUpdater = null;

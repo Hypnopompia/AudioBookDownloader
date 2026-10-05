@@ -32,6 +32,13 @@ function sanitizeName(name, maxLen = 80) {
   return s;
 }
 
+/** "Title - Author" for folder names, without repeating an author the title already mentions. */
+function titleWithAuthor(title, author) {
+  const t = String(title || '').trim() || 'Untitled';
+  const a = String(author || '').trim();
+  return a && !t.toLowerCase().includes(a.toLowerCase()) ? `${t} - ${a}` : t;
+}
+
 /** Parse "577.86", "09:37" or "1:02:03" into seconds (or null). */
 function parseDuration(v) {
   if (v == null) return null;
@@ -88,4 +95,4 @@ function htmlToText(html) {
     .trim();
 }
 
-module.exports = { naturalCompare, sanitizeName, parseDuration, parseRuntime, parseTrack, first, htmlToText };
+module.exports = { naturalCompare, sanitizeName, titleWithAuthor, parseDuration, parseRuntime, parseTrack, first, htmlToText };

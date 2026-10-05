@@ -1,11 +1,11 @@
 'use strict';
 
 /*
- * SD card layout
+ * drive layout
  * --------------
  *   <card>/<Book Title - Author>/001 - Chapter 1.mp3
  *                               /002 - Chapter 2.mp3
- *                               /.book.json          (hidden; title, author, cover id)
+ *                               /.listensync.json    (hidden; title, author, track list)
  *
  * Book folders sit at the top of the card because many inexpensive players
  * only look one folder deep.
@@ -32,10 +32,11 @@ const { pipeline } = require('node:stream/promises');
 const { Transform, Readable } = require('node:stream');
 const crypto = require('node:crypto');
 const mp3split = require('./mp3split');
-const { naturalCompare, sanitizeName } = require('./util');
+const { naturalCompare, sanitizeName, titleWithAuthor } = require('./util');
 const { run, space } = require('./drives');
 
-const META_FILE = '.book.json';
+const META_FILE = '.listensync.json';
+const LEGACY_META_FILE = '.book.json'; // name used before v1.2
 const REORDER_DIR = '_reorder_in_progress';
 const SYSTEM_NAMES = new Set([
   'system volume information', '$recycle.bin', 'recycler', 'lost.dir', 'android', 'dcim', REORDER_DIR,
@@ -59,6 +60,14 @@ function bookPath(mount, folder) {
 async function readMeta(dir) {
   try {
     return JSON.parse(await fs.readFile(path.join(dir, META_FILE), 'utf8'));
+  } catch {
+    /* not found under the current name */
+  }
+  try {
+    // older copies: read the old file name and rename it (if the drive is writable)
+    const meta = JSON.parse(await fs.readFile(path.join(dir, LEGACY_META_FILE), 'utf8'));
+    await fs.rename(path.join(dir, LEGACY_META_FILE), path.join(dir, META_FILE)).catch(() => {});
+    return meta;
   } catch {
     return null;
   }
@@ -99,7 +108,7 @@ function sameOrder(a, b) {
   return a.length === b.length && a.every((v, i) => v === b[i]);
 }
 
-/** Everything the "On the SD card" screen needs. */
+/** Everything the "On the drive" screen needs. */
 async function listCard(mount) {
   await cleanAppleDouble(mount).catch(() => {});
   const { total, free } = await space(mount);
@@ -144,6 +153,8 @@ async function listCard(mount) {
       chapters: mp3s.length,
       expectedChapters: meta?.chapters || null,
       unit: meta?.unit || 'chapter',
+      kind: meta?.kind || 'book',
+      cover: meta?.cover || null,
       trackNumbers: meta?.trackNumbers || null,
       trackTotal: meta?.trackTotal || null,
       quality: meta?.format === '64Kbps MP3' ? 'standard' : meta?.format ? 'high' : null,
@@ -352,12 +363,12 @@ function rangeLabel(numbers, unit = 'chapter') {
 }
 
 async function writeBook(mount, book, localFiles, { onBytes, signal, splitMinutes = 0 } = {}) {
-  if (!fsSync.existsSync(mount)) throw new Error('The SD card is not plugged in.');
+  if (!fsSync.existsSync(mount)) throw new Error('The drive is not plugged in.');
   const numbers = book.tracks.map((t, i) => t.number || i + 1);
   const trackTotal = book.trackTotal || book.tracks.length;
   const partial = numbers.length < trackTotal;
   const unit = book.unit || 'chapter';
-  const name = book.author ? `${book.title} - ${book.author}` : book.title;
+  const name = titleWithAuthor(book.title, book.author);
   // keep the range visible even when the title is long
   const base = partial
     ? `${sanitizeName(name, 60)} (${rangeLabel(numbers, unit)})`
@@ -367,12 +378,14 @@ async function writeBook(mount, book, localFiles, { onBytes, signal, splitMinute
   await fs.mkdir(dir);
 
   const meta = {
-    app: 'Audiobook SD Loader',
+    app: 'ListenSync',
     identifier: book.identifier,
     source: book.source,
     title: book.title,
     author: book.author,
     format: book.format,
+    kind: book.kind || 'book',
+    cover: book.cover || null,
     unit,
     chapters: 0,
     trackTotal,
@@ -423,8 +436,8 @@ async function writeBook(mount, book, localFiles, { onBytes, signal, splitMinute
     }
   } catch (err) {
     await fs.rm(dir, { recursive: true, force: true }).catch(() => {});
-    if (!fsSync.existsSync(mount)) throw new Error('The SD card was removed while copying.');
-    if (err?.code === 'ENOSPC') throw new Error('The SD card ran out of space.');
+    if (!fsSync.existsSync(mount)) throw new Error('The drive was removed while copying.');
+    if (err?.code === 'ENOSPC') throw new Error('The drive ran out of space.');
     throw err;
   }
   return folder;
@@ -440,4 +453,5 @@ module.exports = {
   trackFileName,
   rangeLabel,
   META_FILE,
+  readMeta,
 };

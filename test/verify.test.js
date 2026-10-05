@@ -23,6 +23,9 @@ test('Check books detects damaged, missing and good chapters', async () => {
 
     let r = await verifyBook(mount, 'Book - Author');
     assert.strictEqual(r.status, 'ok', r.problems.join(' '));
+    // written with the pre-v1.2 name: still read, and renamed to the new one
+    assert.ok(fs.existsSync(path.join(dir, '.listensync.json')));
+    assert.ok(!fs.existsSync(path.join(dir, '.book.json')));
 
     // flip one byte in chapter 2 (same size, different contents)
     const f2 = path.join(dir, tracks[1].file);

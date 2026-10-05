@@ -1,8 +1,8 @@
-# Audiobook SD Loader
+# ListenSync
 
-A simple desktop app (macOS, Windows, Linux) for finding free audiobooks and
-putting them on a micro SD card for MP3 headphones, with the chapters stored
-in the order the headphones will play them.
+A simple desktop app (macOS, Windows, Linux) for finding free audiobooks, old-time radio and
+podcasts, listening to them on your computer, and syncing them to an SD card, USB stick or
+MP3 player (for example headphones with a card slot), with everything in the right play order.
 
 ## What it does
 
@@ -11,16 +11,23 @@ in the order the headphones will play them.
   - **Community Audiobooks**: about 50,000 member uploads (quality varies)
   - **Old Time Radio**: about 8,800 classic radio dramas and comedies
 - **Home shelves**: Most popular, Top rated, Short listens, Recently added, and a shelf for each genre (Mystery & Crime, Adventure, Science Fiction, Fantasy, Horror, Romance, Humor, Children & Young Adult, Westerns, History, Biography, Short Stories, Poetry, Plays, Religion, Philosophy, Nature & Science, Travel). Genres come from each book's subject tags.
+- **Podcasts**: Apple's Top Podcasts charts (overall and by category) and search through
+  [Podcast Index](https://podcastindex.org), falling back to Apple's directory without an API key.
+  Episodes download straight from the publisher. Only MP3 episodes are offered, since AAC and video
+  episodes won't play on many headphones. Podcasts use the same batch tools as books: newest that fit,
+  next that fit, ranges, save to computer, play, check and repair. **Follow** a show (the star) to have it
+  listed under Starred, with a **New episodes** badge when it publishes something new. Episode numbers
+  stay stable even for feeds that only list their newest episodes.
 - **Genre chips** with counts, search by title, author or subject, filter by language, and sort by popularity, rating, title, author, newest or length.
 - **Ratings** from archive.org listeners on covers and in book details. "Highest rated" weights by number of reviews, so a single 5-star review doesn't top the list. Only a minority of books have ratings.
 - See cover art, author, length, description, download size and the chapter list for each book.
 - **Caches the book list** on the computer, so it opens instantly after the first load. It refreshes in the background once a week, or when you click "Refresh list".
-- **Detects the SD card automatically** and shows how much space is used and free, plus roughly how many hours of listening still fit.
+- **Detects drives automatically** (SD cards, USB sticks, players that show up as a drive) and shows how much space is used and free, plus roughly how many hours of listening still fit.
 - **Checks free space** before downloading. If a book won't fit, it offers to remove books from the card to make room.
 - **Shows download progress**, speed and time remaining for each book and for the whole list.
 - **Manages the card**: see what's on it, remove books, open folders in Finder or File Explorer.
 - **Ejects the card** with one click, or automatically when all downloads finish.
-- **Save to computer**: download a book now, then listen on the computer or copy it to an SD card later without downloading it again. Saved books live in `Music/Audiobook SD Loader/`.
+- **Save to computer**: download a book now, then listen on the computer or copy it to an SD card later without downloading it again. Saved books live in `Music/ListenSync/`.
 - **My library**: continue listening where you left off, manage books saved on this computer (Play, Copy to SD card, Delete, Delete all, disk usage), and see finished books.
 - **Starred** in the sidebar: quick access to every book you've starred.
 - **Check books** on the SD card screen: reads every chapter back from the card and compares its size and MD5 checksum with the original. The reference is the checksum list saved with the book, then the copy on this computer, then archive.org's published checksums. Damaged or incomplete books are flagged with a **Repair** button, and the "On SD card" badge changes to "Check SD card" or "On SD card ✓".
@@ -30,10 +37,10 @@ in the order the headphones will play them.
 - **Download integrity**: every download is checked against archive.org's MD5 checksum and retried if it doesn't match.
 - **Built-in player** for books on the computer or the SD card: chapter list, back/forward 30 s, playback speed, and keyboard media keys. The listening position is saved every few seconds, and finishing the last chapter marks the book as read.
 
-## How books are stored on the card
+## How books are stored on a drive
 
 ```
-SD card/
+Drive/
   Adventures of Tom Sawyer - Mark Twain/
     001 - Chapter 01-02.mp3
     002 - Chapter 03.mp3
@@ -67,6 +74,17 @@ npm install
 npm start
 ```
 
+## API keys
+
+Podcast search uses the free [Podcast Index](https://api.podcastindex.org) API. Put your own
+credentials in a `.env` file (copy `.env.example`); it is gitignored and never committed.
+`npm run dist` / `npm run release` copy them into the packaged app (`src/main/secrets.json`,
+also gitignored). Without a key, podcast search falls back to Apple's directory.
+
+Anything inside a desktop app can be extracted by a determined person, so this keeps the key
+out of GitHub rather than making it truly secret. If it's ever abused, revoke it on
+podcastindex.org, create a new one, and ship an update.
+
 ## Building installers
 
 ```bash
@@ -80,9 +98,9 @@ Output goes to `dist/`:
 
 | File | For |
 |---|---|
-| `Audiobook SD Loader-<version>-universal.dmg` | macOS (Apple Silicon and Intel) |
-| `Audiobook SD Loader Setup <version>.exe` | Windows 10/11 installer |
-| `Audiobook SD Loader <version>.exe` | Windows portable (no install needed) |
+| `ListenSync-<version>-universal.dmg` | macOS (Apple Silicon and Intel) |
+| `ListenSync Setup <version>.exe` | Windows 10/11 installer |
+| `ListenSync <version>.exe` | Windows portable (no install needed) |
 
 ### Opening an unsigned build
 
@@ -91,7 +109,7 @@ certificate, so each system shows a warning the first time:
 
 - **macOS 15 (Sequoia) and later**: open the app once and dismiss the warning, then go to
   **System Settings → Privacy & Security**, scroll down, and click **Open Anyway** next to
-  "Audiobook SD Loader". Confirm, and from then on it opens normally.
+  "ListenSync". Confirm, and from then on it opens normally.
   (On macOS 14 and earlier you can instead right-click the app → **Open** → **Open**.)
 - **Windows**: on the blue "Windows protected your PC" screen, click **More info**, then **Run anyway**.
 
@@ -102,7 +120,7 @@ certificate. electron-builder supports both through environment variables
 
 ## Releasing an update
 
-The app checks [GitHub Releases](https://github.com/Hypnopompia/AudioBookDownloader/releases)
+The app checks [GitHub Releases](https://github.com/Hypnopompia/ListenSync/releases)
 for new versions 10 seconds after it starts and then every 6 hours (Settings → About & updates
 also has a "Check for updates" button).
 
@@ -138,7 +156,7 @@ npx electron scripts/make-icon.js
 
 electron-builder turns `build/icon.png` into the macOS `.icns` and Windows `.ico` files.
 When running from source (`npm start`) the macOS menu bar still says "Electron";
-the packaged app shows "Audiobook SD Loader".
+the packaged app shows "ListenSync".
 
 ## Tests
 
@@ -172,11 +190,32 @@ src/main/catalog.js     archive.org search + metadata, list cache, chapter selec
 src/main/drives.js      SD card detection, free space, eject (macOS/Windows/Linux)
 src/main/sdcard.js      card listing, ordered writes, fix play order, delete
 src/main/downloader.js  download queue: parallel downloads, ordered copy, ETA
-src/main/local.js       books saved on this computer (Music/Audiobook SD Loader)
+src/main/local.js       books saved on this computer (Music/ListenSync)
 src/main/libstate.js    starred / read / not interested / listening position (library.json)
 src/main/media.js       abook:// protocol that streams MP3s to the player (with seeking)
 src/main/verify.js      "Check books": compares card files with expected sizes/MD5s
 src/main/mp3split.js    MP3 frame parser + splitter + minimal ID3v2 writer (no ffmpeg)
 src/renderer/shelves.js Home shelves, genre chips, Settings dialog
+src/main/podcasts.js    podcast directory (Podcast Index / Apple), charts, episodes
+src/main/secrets.js     API credentials from .env / the bundled secrets.json
+src/renderer/podcasts.js Podcasts browsing and "New episodes" check
 src/renderer/           user interface (plain HTML/CSS/JS, no build step)
 ```
+
+## Credits and disclaimer
+
+Audiobooks come from [LibriVox](https://librivox.org), whose volunteers record public-domain
+books, and the [Internet Archive](https://archive.org), which hosts them and the other
+collections the app can browse. Cover images and ratings are loaded from archive.org.
+
+This project is **not affiliated with or endorsed by LibriVox or the Internet Archive**.
+LibriVox recordings are in the public domain in the USA; listeners elsewhere should check
+the copyright status in their country. Recordings uploaded by Internet Archive members may
+be under copyright: you are responsible for making sure your use is allowed where you live.
+The app identifies itself to archive.org with a link to this repository and keeps its
+requests modest (a weekly catalog refresh and at most three downloads at a time).
+
+## License
+
+[MIT](LICENSE)
+

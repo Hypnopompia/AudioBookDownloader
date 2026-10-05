@@ -98,7 +98,7 @@ async function listWindows() {
     .map((d) => ({
       id: d.id,
       mount: d.id + '\\',
-      label: d.label || 'SD Card',
+      label: d.label || 'Drive',
       fs: d.fs,
       isFat32: /^fat32$/i.test(d.fs),
       readOnly: false,
@@ -134,7 +134,7 @@ async function listLinux() {
   return out;
 }
 
-/** List mounted SD cards / USB drives formatted FAT or exFAT, with space info. */
+/** List mounted drives / USB drives formatted FAT or exFAT, with space info. */
 async function listDrives() {
   let list = [];
   try {
@@ -172,7 +172,7 @@ async function eject(drive) {
     try {
       await run('diskutil', ['eject', mount], { timeout: 30000 });
     } catch (err) {
-      throw new Error(`The SD card could not be ejected because something is still using it. Close any Finder windows showing the card and try again.\n\n${err.stderr || err.message}`.trim());
+      throw new Error(`The drive could not be ejected because something is still using it. Close any Finder windows showing the drive and try again.\n\n${err.stderr || err.message}`.trim());
     }
   } else if (process.platform === 'win32') {
     const letter = mount.replace(/[\\/]+$/, '');
@@ -183,20 +183,20 @@ async function eject(drive) {
     );
     for (let i = 0; i < 10 && (await exists(letter + '\\')); i++) await new Promise((r) => setTimeout(r, 500));
     if (await exists(letter + '\\')) {
-      throw new Error('Windows says the SD card is still in use. Close any File Explorer windows showing the card and try again.');
+      throw new Error('Windows says the drive is still in use. Close any File Explorer windows showing the drive and try again.');
     }
   } else {
     try {
       if (drive.device) await run('udisksctl', ['unmount', '-b', drive.device], { timeout: 30000 });
       else await run('umount', [mount], { timeout: 30000 });
     } catch (err) {
-      throw new Error(`The SD card could not be unmounted. Close any windows showing the card and try again.\n\n${err.stderr || err.message}`.trim());
+      throw new Error(`The drive could not be unmounted. Close any windows showing the drive and try again.\n\n${err.stderr || err.message}`.trim());
     }
     if (drive.parentDevice) {
       await run('udisksctl', ['power-off', '-b', drive.parentDevice], { timeout: 15000 }).catch(() => {});
     }
   }
-  return 'It is now safe to remove the SD card.';
+  return 'It is now safe to remove the drive.';
 }
 
 module.exports = { listDrives, space, eject, run };

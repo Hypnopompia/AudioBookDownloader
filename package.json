@@ -1,8 +1,8 @@
 {
-  "name": "audiobook-sd-loader",
-  "productName": "Audiobook SD Loader",
-  "version": "1.1.0",
-  "description": "Browse free audiobooks and copy them to an SD card in the right play order.",
+  "name": "listensync",
+  "productName": "ListenSync",
+  "version": "1.2.0",
+  "description": "Free audiobooks, old-time radio and podcasts: listen on your computer or sync them to an SD card, USB stick or MP3 player in the right play order.",
   "main": "src/main/main.js",
   "author": "TJ Hunter",
   "license": "MIT",
@@ -10,15 +10,15 @@
   "scripts": {
     "start": "electron .",
     "test": "node --test test/*.test.js",
-    "dist": "electron-builder --mac --win --publish never",
-    "dist:mac": "electron-builder --mac --publish never",
-    "dist:win": "electron-builder --win --publish never",
-    "dist:linux": "electron-builder --linux --publish never",
+    "dist": "node scripts/write-secrets.js && electron-builder --mac --win --publish never",
+    "dist:mac": "node scripts/write-secrets.js && electron-builder --mac --publish never",
+    "dist:win": "node scripts/write-secrets.js && electron-builder --win --publish never",
+    "dist:linux": "node scripts/write-secrets.js && electron-builder --linux --publish never",
     "release": "node scripts/release.js"
   },
   "build": {
     "appId": "com.tjhunter.audiobooksdloader",
-    "productName": "Audiobook SD Loader",
+    "productName": "ListenSync",
     "files": [
       "src/**/*",
       "package.json"
@@ -81,7 +81,7 @@
       {
         "provider": "github",
         "owner": "Hypnopompia",
-        "repo": "AudioBookDownloader",
+        "repo": "ListenSync",
         "releaseType": "draft"
       }
     ]

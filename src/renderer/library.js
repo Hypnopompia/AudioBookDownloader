@@ -2,7 +2,7 @@
 
 /* global api, state, el, icon, $, coverEl, toast, showError, confirmBox, fmtBytes, fmtClock, fmtRuntime,
    libEntry, setLib, localBook, cardBook, currentDrive, openBook, openMakeRoom, refreshCard, refreshBadges,
-   showView, applyFilters, playBook, stopPlayerIf, refreshBookDialog, bookCard, onCardIds, queuedIds */
+   showView, applyFilters, playBook, stopPlayerIf, refreshBookDialog, bookCard, onCardIds, queuedIds, toDetails, rememberCover, sourceTag */
 
 // =========================================================================
 // "My library": continue listening, books saved on this computer, starred
@@ -16,6 +16,7 @@ async function refreshLocal() {
     const info = await api.local.list();
     if (req !== localReq) return;
     state.local = info;
+    for (const b of info.books) rememberCover(b.identifier, b.cover);
   } catch (err) {
     console.warn(err);
   }
@@ -57,12 +58,12 @@ function renderLibrary() {
         const src = playableSource(key, e);
         const p = e.position;
         return el('div', { class: 'row lib-row' },
-          coverEl(idOf(key, e), e.title, e.author),
+          toDetails(coverEl(idOf(key, e), e.title, e.author), idOf(key, e), e),
           el('div', {},
-            el('div', { class: 'row-title' }, e.title || key),
-            el('div', { class: 'row-sub' }, `Chapter ${p.track + 1} of ${p.tracks}${p.chapter ? ` (${p.chapter})` : ''} · stopped at ${fmtClock(p.time)}`),
+            toDetails(el('div', { class: 'row-title' }, e.title || key), idOf(key, e), e),
+            el('div', { class: 'row-sub' }, sourceTag(idOf(key, e), e.source), `Chapter ${p.track + 1} of ${p.tracks}${p.chapter ? ` (${p.chapter})` : ''} · stopped at ${fmtClock(p.time)}`),
             el('div', { class: 'progress thin' }, el('span', { style: { width: `${Math.min(100, ((p.track + 0.5) / p.tracks) * 100)}%` } })),
-            !src ? el('div', { class: 'row-sub' }, 'Not on this computer or the SD card that’s plugged in.') : null),
+            !src ? el('div', { class: 'row-sub' }, 'Not on this computer or the drive that’s plugged in.') : null),
           el('div', { class: 'row-actions' },
             src ? el('button', { class: 'btn btn-primary btn-small', onclick: () => playBook(src) }, icon('play'), 'Continue')
               : idOf(key, e) ? el('button', { class: 'btn btn-secondary btn-small', onclick: () => openBook(idOf(key, e), e) }, 'Details') : null,
@@ -82,7 +83,7 @@ function renderLibrary() {
   );
   if (!L.books.length) {
     parts.push(el('p', { class: 'muted' },
-      'Nothing saved yet. Open any book and press "Save to computer" to download it now, so you can listen here or copy it to an SD card later without waiting.'));
+      'Nothing saved yet. Open any book and press "Save to computer" to download it now, so you can listen here or copy it to a drive later without waiting.'));
   } else {
     parts.push(el('div', { class: 'list' }, L.books.map(localRow)));
   }
@@ -101,17 +102,17 @@ function renderLibrary() {
     parts.push(el('p', { class: 'muted' }, `${hidden} ${hidden === 1 ? 'book is' : 'books are'} marked "Not interested" and hidden while browsing. `,
       el('button', { class: 'link', onclick: () => { state.show = 'hidden'; $('#show').value = 'hidden'; showView('browse'); applyFilters(); } }, 'Show them')));
   }
-  root.replaceChildren(...parts);
+  root.replaceChildren(...parts.filter(Boolean));
 }
 
 function entryRow(key, e, extra) {
   const id = idOf(key, e);
   const src = playableSource(key, e);
   return el('div', { class: 'row lib-row' },
-    coverEl(id, e.title, e.author),
+    toDetails(coverEl(id, e.title, e.author), id, e),
     el('div', {},
-      el('div', { class: 'row-title' }, e.title || key, e.status === 'read' ? el('span', { class: 'tag ok' }, 'Read') : null),
-      el('div', { class: 'row-sub' }, [e.author, fmtRuntime(e.runtime)].filter(Boolean).join(' · '))),
+      toDetails(el('div', { class: 'row-title' }, e.title || key, e.status === 'read' ? el('span', { class: 'tag ok' }, 'Read') : null), id, e),
+      el('div', { class: 'row-sub' }, sourceTag(id, e.source), [e.author, fmtRuntime(e.runtime)].filter(Boolean).join(' · '))),
     el('div', { class: 'row-actions' },
       src ? el('button', { class: 'btn btn-secondary btn-small', onclick: () => playBook(src) }, icon('play'), 'Play') : null,
       id ? el('button', { class: 'btn btn-secondary btn-small', onclick: () => openBook(id, e) }, 'Details') : null,
@@ -123,14 +124,14 @@ function localRow(b) {
   const drive = currentDrive();
   const e = libEntry(b.identifier);
   let copyBtn;
-  if (onCard) copyBtn = el('button', { class: 'btn btn-secondary btn-small', disabled: true }, icon('check'), 'On SD card');
-  else if (!drive) copyBtn = el('button', { class: 'btn btn-secondary btn-small', disabled: true, title: 'Plug in the SD card first' }, icon('card'), 'Copy to SD card');
-  else copyBtn = el('button', { class: 'btn btn-secondary btn-small', onclick: (ev) => copyLocalToCard(b, ev.currentTarget) }, icon('card'), 'Copy to SD card');
+  if (onCard) copyBtn = el('button', { class: 'btn btn-secondary btn-small', disabled: true }, icon('check'), 'On drive');
+  else if (!drive) copyBtn = el('button', { class: 'btn btn-secondary btn-small', disabled: true, title: 'Plug in the drive first' }, icon('card'), 'Copy to drive');
+  else copyBtn = el('button', { class: 'btn btn-secondary btn-small', onclick: (ev) => copyLocalToCard(b, ev.currentTarget) }, icon('card'), 'Copy to drive');
   return el('div', { class: 'row lib-row' },
-    coverEl(b.identifier, b.title, b.author),
+    toDetails(coverEl(b.identifier, b.title, b.author), b.identifier, b),
     el('div', {},
-      el('div', { class: 'row-title' }, b.title, e.status === 'read' ? el('span', { class: 'tag ok' }, 'Read') : null),
-      el('div', { class: 'row-sub' }, [
+      toDetails(el('div', { class: 'row-title' }, b.title, e.status === 'read' ? el('span', { class: 'tag ok' }, 'Read') : null), b.identifier, b),
+      el('div', { class: 'row-sub' }, sourceTag(b.identifier, b.source), [
         b.author,
         b.partial ? `${b.chapters} of ${b.trackTotal} ${b.unit || 'chapter'}s` : `${b.chapters} ${b.unit || 'chapter'}s`,
         fmtBytes(b.size),
@@ -146,7 +147,7 @@ async function copyLocalToCard(b, btn) {
   btn.disabled = true;
   try {
     await api.downloads.add({ identifier: b.identifier, quality: b.quality, mount: state.mount, source: b.source, target: 'card', numbers: b.partial ? b.numbers : null });
-    toast(`Copying "${b.title}" to the SD card.`, 'success', { label: 'See progress', run: () => showView('downloads') });
+    toast(`Copying "${b.title}" to the drive.`, 'success', { label: 'See progress', run: () => showView('downloads') });
     refreshCard();
   } catch (err) {
     btn.disabled = false;
@@ -162,7 +163,7 @@ async function copyLocalToCard(b, btn) {
 async function deleteLocal(b) {
   const ok = await confirmBox({
     title: `Delete "${b.title}" from this computer?`,
-    text: `This frees up ${fmtBytes(b.size)} on this computer. Copies on SD cards are not affected, and your listening position is kept.`,
+    text: `This frees up ${fmtBytes(b.size)} on this computer. Copies on drives are not affected, and your listening position is kept.`,
     ok: 'Delete',
     danger: true,
   });
@@ -180,7 +181,7 @@ async function deleteAllLocal() {
   const L = state.local;
   const ok = await confirmBox({
     title: 'Delete all saved books from this computer?',
-    text: `This deletes ${L.books.length} ${L.books.length === 1 ? 'book' : 'books'} and frees up ${fmtBytes(L.total)}. Copies on SD cards are not affected.`,
+    text: `This deletes ${L.books.length} ${L.books.length === 1 ? 'book' : 'books'} and frees up ${fmtBytes(L.total)}. Copies on drives are not affected.`,
     ok: 'Delete all',
     danger: true,
   });
@@ -216,17 +217,17 @@ function renderStarred() {
   const starred = starredEntries();
   const head = el('div', { class: 'page-head' },
     el('div', {}, el('h1', {}, 'Starred'),
-      el('p', {}, starred.length ? `${starred.length} ${starred.length === 1 ? 'book' : 'books'} saved for later` : 'Books you star show up here.')));
+      el('p', {}, starred.length ? `${starred.length} saved for later` : 'Books and podcasts you star show up here.')));
   if (!starred.length) {
     root.replaceChildren(head,
       el('div', { class: 'state' },
         el('h3', {}, 'No starred books yet'),
         el('div', {}, 'Open any book and press "Star" to keep it here for quick access.'),
-        el('button', { class: 'btn btn-primary', onclick: () => showView('browse') }, 'Find audiobooks')));
+        el('button', { class: 'btn btn-primary', onclick: () => showView('browse') }, 'Discover something to listen to')));
     return;
   }
   const onCard = onCardIds();
   const queued = queuedIds();
-  const items = starred.map(([key, e]) => ({ id: idOf(key, e), title: e.title || key, author: e.author || '', runtime: e.runtime || null, lk: '' }));
+  const items = starred.map(([key, e]) => ({ id: idOf(key, e), title: e.title || key, author: e.author || '', runtime: e.runtime || null, lk: '', source: e.source, showSource: true }));
   root.replaceChildren(head, el('div', { class: 'grid grid-flush' }, items.map((it) => bookCard(it, onCard, queued))));
 }

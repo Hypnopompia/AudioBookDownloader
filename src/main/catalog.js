@@ -13,13 +13,13 @@ const SOURCES = [
   {
     id: 'librivox',
     name: 'LibriVox',
-    blurb: 'Free public-domain audiobooks read by volunteers. The biggest and most reliable collection.',
+    blurb: 'Public-domain books read aloud by volunteers.',
     query: 'collection:librivoxaudio AND mediatype:audio',
   },
   {
     id: 'community',
     name: 'Community Audiobooks',
-    blurb: 'Uploaded by Internet Archive members. Quality varies, and some uploads may not be truly free. LibriVox is the safest choice.',
+    blurb: 'Audiobooks and readings uploaded by Internet Archive members.',
     query:
       'collection:audio_bookspoetry AND mediatype:audio AND -collection:librivoxaudio AND ' +
       '(format:"VBR MP3" OR format:"128Kbps MP3" OR format:"64Kbps MP3")',
@@ -27,7 +27,7 @@ const SOURCES = [
   {
     id: 'otr',
     name: 'Old Time Radio',
-    blurb: 'Classic radio dramas, mysteries, westerns and comedies from the 1930s-1950s.',
+    blurb: 'Radio dramas, mysteries, westerns and comedies from the 1930s–50s.',
     query: 'collection:oldtimeradio AND mediatype:audio',
   },
 ];
@@ -243,6 +243,14 @@ function buildTracks(files, quality) {
 
 const detailCache = new Map();
 
+/** Which of the app's sources an archive.org item belongs to. */
+function sourceFromCollections(collection) {
+  const c = [].concat(collection || []).map((x) => String(x).toLowerCase());
+  if (c.includes('librivoxaudio')) return 'librivox';
+  if (c.some((x) => /oldtimeradio|radioprograms|otrr/.test(x))) return 'otr';
+  return 'community';
+}
+
 function averageRating(reviews) {
   const stars = reviews.map((r) => Number(r.stars)).filter((n) => n >= 1 && n <= 5);
   return stars.length ? Math.round((stars.reduce((a, b) => a + b, 0) / stars.length) * 10) / 10 : null;
@@ -290,6 +298,7 @@ async function getDetails(identifier, quality = 'standard') {
     trackTotal: tracks.length,
     // radio shows are collections of episodes rather than chapters of one story
     unit: [].concat(m.collection || []).some((c) => /oldtimeradio|radioprograms|otrr/i.test(c)) ? 'episode' : 'chapter',
+    source: sourceFromCollections(m.collection),
   };
 }
 

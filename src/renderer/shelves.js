@@ -132,7 +132,7 @@ function openSettings() {
         ['30', 'Split into parts of about 30 minutes'],
       ], (v) => save({ splitMinutes: v })),
       el('p', { class: 'hint' },
-        'Applies to books put on an SD card from now on. Books saved on this computer keep their original chapters. ' +
+        'Applies to books put on a drive from now on. Books saved on this computer keep their original chapters. ' +
         'Chapters only slightly longer than the part length are left whole.'),
 
       el('h3', {}, 'Sound quality for new downloads'),
@@ -185,14 +185,22 @@ function renderUpdateStatus() {
       : u.state === 'available' ? el('button', { class: 'btn btn-primary btn-small', onclick: installUpdate }, 'Download update')
         : u.state !== 'dev' ? el('button', { class: 'btn btn-secondary btn-small', disabled: ['checking', 'downloading'].includes(u.state), onclick: () => api.updates.check() }, 'Check for updates')
           : null;
-  box.replaceChildren(
-    el('div', {}, el('strong', {}, `Audiobook SD Loader ${u.current || ''}`)),
+  box.replaceChildren(...[
+    el('div', {}, el('strong', {}, `ListenSync ${u.current || ''}`)),
     el('div', { class: 'muted' }, updateText(u)),
     u.state === 'available' && !u.selfUpdate
       ? el('p', { class: 'hint' }, 'This copy can\u2019t install updates by itself, so the download page will open in your browser.')
       : null,
-    action
-  );
+    action,
+    el('p', { class: 'hint' },
+      'Audiobooks come from ',
+      el('button', { class: 'link', onclick: () => api.openExternal('https://librivox.org') }, 'LibriVox'),
+      ', whose volunteers record public-domain books, and the ',
+      el('button', { class: 'link', onclick: () => api.openExternal('https://archive.org') }, 'Internet Archive'),
+      ', which hosts them. This app is not affiliated with or endorsed by either. ' +
+        'Recordings uploaded by Internet Archive members may be under copyright; you are responsible for making sure your use is allowed where you live.'),
+    el('p', { class: 'hint' }, 'Free and open source (MIT license).'),
+  ].filter(Boolean)); // (replaceChildren would print null as text)
 }
 
 function renderUpdateBanner() {
@@ -205,9 +213,11 @@ function renderUpdateBanner() {
   b.hidden = false;
   const label = u.state === 'ready' ? `Version ${u.version} is ready` : u.state === 'downloading' ? `Updating… ${u.percent || 0}%` : `Version ${u.version} is out`;
   b.replaceChildren(
-    el('span', { class: 'update-text' }, label),
-    u.state === 'downloading'
-      ? null
-      : el('button', { class: 'btn btn-primary btn-small', onclick: installUpdate }, u.state === 'ready' ? 'Restart' : 'Download')
+    ...[
+      el('span', { class: 'update-text' }, label),
+      u.state === 'downloading'
+        ? null
+        : el('button', { class: 'btn btn-primary btn-small', onclick: installUpdate }, u.state === 'ready' ? 'Restart' : 'Download'),
+    ].filter(Boolean)
   );
 }

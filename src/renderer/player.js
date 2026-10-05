@@ -3,7 +3,7 @@
 /* global api, state, el, $, icon, coverEl, toast, showError, fmtClock, libEntry, setLib, refreshBadges, renderLibrary */
 
 // =========================================================================
-// Built-in player. Plays a book from this computer or the SD card and
+// Built-in player. Plays a book from this computer or the drive and
 // remembers the chapter + position so listening can resume later.
 // =========================================================================
 
@@ -78,7 +78,7 @@ function initPlayer() {
     ms.setActionHandler('seekforward', () => skip(30));
   }
 
-  // Stop if the SD card being played from is unplugged
+  // Stop if the drive being played from is unplugged
   api.drives.onChange((list) => {
     stopPlayerIf((src) => src.kind === 'card' && !list.some((d) => d.mount === src.mount) && !state.manualDrives.some((d) => d.mount === src.mount));
   });

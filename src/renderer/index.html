@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8" />
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'self'; img-src 'self' data: https://archive.org https://*.archive.org; style-src 'self'; script-src 'self'; media-src abook:; connect-src 'none'" />
-  <title>Audiobook SD Loader</title>
+        content="default-src 'self'; img-src 'self' data: https:; style-src 'self'; script-src 'self'; media-src abook:; connect-src 'none'" />
+  <title>ListenSync</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -13,19 +13,19 @@
       <div class="brand">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 13a8 8 0 0 1 16 0v5a2 2 0 0 1-2 2h-1a1 1 0 0 1-1-1v-5a1 1 0 0 1 1-1h2v-0a6 6 0 0 0-12 0v0h2a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1H6a2 2 0 0 1-2-2z"/></svg>
         <div>
-          <div class="brand-name">Audiobook SD Loader</div>
-          <div class="brand-sub">Free audiobooks</div>
+          <div class="brand-name">ListenSync</div>
+          <div class="brand-sub">Free audiobooks, radio &amp; podcasts</div>
         </div>
       </div>
 
       <section class="panel" id="cardPanel" aria-labelledby="cardPanelTitle">
-        <h2 id="cardPanelTitle">SD card</h2>
+        <h2 id="cardPanelTitle">Drive</h2>
         <div id="driveArea"></div>
         <div id="usage"></div>
         <div class="panel-actions">
           <button class="btn btn-secondary btn-block" id="ejectBtn" hidden>
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5l7 8H5zM5 16h14v3H5z"/></svg>
-            Eject SD card
+            Eject drive
           </button>
         </div>
       </section>
@@ -33,7 +33,7 @@
       <nav class="tabs" aria-label="Sections">
         <button class="tab active" data-view="browse">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 4a6 6 0 1 1 0 12 6 6 0 0 1 0-12zm0 2a4 4 0 1 0 0 8 4 4 0 0 0 0-8zm5.3 9.9 4.4 4.4-1.4 1.4-4.4-4.4z"/></svg>
-          <span>Find audiobooks</span>
+          <span>Discover</span>
         </button>
         <button class="tab" data-view="starred">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 17.3 5.8 21l1.6-7L2 9.2l7.2-.6L12 2l2.8 6.6 7.2.6-5.4 4.8 1.6 7z"/></svg>
@@ -42,7 +42,7 @@
         </button>
         <button class="tab" data-view="card">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 2h9a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V7zm1 2v4h2V4zm3 0v4h2V4zm3 0v4h2V4z"/></svg>
-          <span>On the SD card</span>
+          <span>On the drive</span>
           <span class="tab-count" id="cardCount"></span>
         </button>
         <button class="tab" data-view="library">
@@ -191,5 +191,6 @@
   <script src="library.js"></script>
   <script src="player.js"></script>
   <script src="shelves.js"></script>
+  <script src="podcasts.js"></script>
 </body>
 </html>

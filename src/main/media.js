@@ -98,12 +98,7 @@ async function open(source) {
     const dir = sdcard.bookPath(source.mount, source.folder);
     const names = (await fsp.readdir(dir)).filter((n) => /\.mp3$/i.test(n) && !n.startsWith('._')).sort(naturalCompare);
     if (!names.length) throw new Error('No MP3 files in this folder.');
-    let meta = null;
-    try {
-      meta = JSON.parse(await fsp.readFile(path.join(dir, sdcard.META_FILE), 'utf8'));
-    } catch {
-      /* folder not made by this app */
-    }
+    const meta = await sdcard.readMeta(dir); // null for folders not made by this app
     const numberByFile = new Map(
       (meta?.splitMinutes ? [] : meta?.tracks || []).filter((t) => t.file && t.number).map((t) => [t.file, t.number])
     );
