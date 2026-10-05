@@ -4,6 +4,26 @@ A simple desktop app (macOS, Windows, Linux) for finding free audiobooks, old-ti
 podcasts, listening to them on your computer, and syncing them to an SD card, USB stick or
 MP3 player (for example headphones with a card slot), with everything in the right play order.
 
+**[Download ListenSync](https://hypnopompia.github.io/ListenSync/)** for macOS or Windows
+(or see [all releases](https://github.com/Hypnopompia/ListenSync/releases/latest)).
+
+![ListenSync: browsing LibriVox audiobooks](docs/screenshots/discover.png)
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/book-details.png" alt="Book details with rating, description and chapters"><br><sub>Details, ratings and chapters for every book</sub></td>
+    <td width="50%"><img src="docs/screenshots/podcasts.png" alt="Podcasts by category"><br><sub>Podcasts: top charts by category, plus search</sub></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/drive.png" alt="What's on the drive, checked and in play order"><br><sub>What's on the drive, checked and in play order</sub></td>
+    <td><img src="docs/screenshots/episodes.png" alt="Choosing a batch of radio episodes"><br><sub>Long series and podcasts: pick the next batch that fits</sub></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/library.png" alt="My library with the built-in player"><br><sub>Listen on the computer and pick up where you left off</sub></td>
+    <td><img src="docs/screenshots/downloads.png" alt="Downloads with progress and time left"><br><sub>Downloads with progress and time left</sub></td>
+  </tr>
+</table>
+
 ## What it does
 
 - **Browse free audiobooks** from three Internet Archive collections:

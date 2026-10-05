@@ -1518,7 +1518,7 @@ function renderDownloads() {
   if (active.length) {
     mini.hidden = false;
     mini.replaceChildren(
-      el('strong', {}, `Adding ${active.length} ${active.length === 1 ? 'book' : 'books'}…`),
+      el('strong', {}, `Adding ${active.length}…`),
       el('div', { class: 'progress', style: { width: '100%' } }, el('span', { style: { width: `${(s.queueProgress * 100).toFixed(1)}%` } })),
       el('span', { class: 'muted' }, fmtEta(s.queueEta)));
     mini.onclick = () => showView('downloads');
@@ -1539,7 +1539,7 @@ function renderDownloads() {
     parts.push(
       el('div', { class: 'summary-card' },
         el('div', { class: 'summary-top' },
-          el('strong', {}, `${active.length} ${active.length === 1 ? 'book' : 'books'} to go`),
+          el('strong', {}, `${active.length} to go`),
           el('span', { class: 'muted' }, fmtEta(s.queueEta))),
         el('div', { class: 'progress' }, el('span', { style: { width: `${(s.queueProgress * 100).toFixed(1)}%` } })),
         el('label', { class: 'check' },
@@ -1572,9 +1572,9 @@ function jobRow(j) {
     pct = 50;
   } else if (j.status === 'done') {
     pct = 100;
-    numbers = `${j.chapterCount} ${j.unit || 'chapter'}s · ${fmtBytes(j.totalBytes)}`;
+    numbers = `${j.chapterCount} ${j.unit || 'chapter'}${j.chapterCount === 1 ? '' : 's'} · ${fmtBytes(j.totalBytes)}`;
   } else if (j.status === 'queued') {
-    numbers = `${j.chapterCount} ${j.unit || 'chapter'}s · ${fmtBytes(j.totalBytes)} · waiting for the book above to finish`;
+    numbers = `${j.chapterCount} ${j.unit || 'chapter'}${j.chapterCount === 1 ? '' : 's'} · ${fmtBytes(j.totalBytes)} · waiting for the one above to finish`;
   }
 
   const actions = [];

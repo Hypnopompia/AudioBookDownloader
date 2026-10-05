@@ -45,7 +45,7 @@ function renderLibrary() {
   const entries = Object.entries(state.lib);
   const parts = [
     el('div', { class: 'page-head' },
-      el('div', {}, el('h1', {}, 'My library'), el('p', {}, 'Books you’re listening to, have saved on this computer, or have finished.'))),
+      el('div', {}, el('h1', {}, 'My library'), el('p', {}, 'What you’re listening to, what you’ve saved on this computer, and what you’ve finished.'))),
   ];
 
   // ---- Continue listening

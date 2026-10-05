@@ -34,7 +34,11 @@ const APP_NAME = 'ListenSync';
 const OLD_NAME = 'Audiobook SD Loader'; // name before v1.2
 const ICON = path.join(__dirname, '..', 'assets', 'icon.png');
 app.setName(APP_NAME); // menus, About panel, notifications and the settings folder use this
-migrateSettingsFolder();
+// LISTENSYNC_PROFILE=<folder> runs the app with separate settings and saved
+// books (for testing and screenshots); otherwise migrate from the old name.
+const PROFILE = process.env.LISTENSYNC_PROFILE ? path.resolve(process.env.LISTENSYNC_PROFILE) : null;
+if (PROFILE) app.setPath('userData', path.join(PROFILE, 'settings'));
+else migrateSettingsFolder();
 
 /**
  * The app was called "Audiobook SD Loader" before v1.2. Copy its settings,
@@ -451,7 +455,7 @@ app.whenReady().then(() => {
   settings.init(userData);
   catalog.init(path.join(userData, 'cache'));
   libstate.init(userData);
-  local.init(migrateMusicFolder());
+  local.init(PROFILE ? path.join(PROFILE, 'library') : migrateMusicFolder());
   local.migrateNames().then(() => local.cleanupPartial());
   fs.rm(path.join(os.tmpdir(), 'audiobook-sd-loader'), { recursive: true, force: true }).catch(() => {}); // v1.0 temp folder
   media.handleProtocol();
