@@ -70,16 +70,35 @@ npm start
 ## Building installers
 
 ```bash
-npm run dist:mac     # .dmg      (build on a Mac)
-npm run dist:win     # installer + portable .exe (build on Windows, or a Mac with Wine)
-npm run dist:linux   # AppImage + .deb
+npm run dist:mac     # universal .dmg (Apple Silicon + Intel)
+npm run dist:win     # Windows x64 installer + portable .exe (can be built on a Mac)
+npm run dist:linux   # x64 AppImage + .deb
+npm run dist         # Mac and Windows together
 ```
 
-Output goes to `dist/`. The builds are not notarized or code-signed for
-distribution, so the first launch needs one extra step:
+Output goes to `dist/`:
 
-- **macOS**: right-click the app, choose **Open**, then confirm.
-- **Windows**: on the SmartScreen warning, click **More info**, then **Run anyway**.
+| File | For |
+|---|---|
+| `Audiobook SD Loader-<version>-universal.dmg` | macOS (Apple Silicon and Intel) |
+| `Audiobook SD Loader Setup <version>.exe` | Windows 10/11 installer |
+| `Audiobook SD Loader <version>.exe` | Windows portable (no install needed) |
+
+### Opening an unsigned build
+
+The builds are not signed with an Apple Developer ID or a Windows code-signing
+certificate, so each system shows a warning the first time:
+
+- **macOS 15 (Sequoia) and later**: open the app once and dismiss the warning, then go to
+  **System Settings → Privacy & Security**, scroll down, and click **Open Anyway** next to
+  "Audiobook SD Loader". Confirm, and from then on it opens normally.
+  (On macOS 14 and earlier you can instead right-click the app → **Open** → **Open**.)
+- **Windows**: on the blue "Windows protected your PC" screen, click **More info**, then **Run anyway**.
+
+To remove these warnings, sign the macOS build with a Developer ID certificate and
+notarize it (Apple Developer Program), and sign the Windows build with a code-signing
+certificate. electron-builder supports both through environment variables
+(`CSC_LINK`/`CSC_KEY_PASSWORD`, `APPLE_ID`/`APPLE_APP_SPECIFIC_PASSWORD`/`APPLE_TEAM_ID`).
 
 ## App icon
 
