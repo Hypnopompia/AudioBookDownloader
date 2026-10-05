@@ -1737,7 +1737,7 @@ function onDownloadsChanged(snap) {
 
 function showView(name) {
   state.view = name;
-  for (const t of document.querySelectorAll('.tab')) t.classList.toggle('active', t.dataset.view === name);
+  for (const t of document.querySelectorAll('.tab[data-view]')) t.classList.toggle('active', t.dataset.view === name);
   for (const v of document.querySelectorAll('.view')) v.hidden = v.id !== `view-${name}`;
   if (name === 'card') refreshCard();
   if (name === 'library') refreshLocal();
@@ -1753,7 +1753,7 @@ function debounce(fn, ms) {
 }
 
 async function init() {
-  for (const t of document.querySelectorAll('.tab')) t.addEventListener('click', () => showView(t.dataset.view));
+  for (const t of document.querySelectorAll('.tab[data-view]')) t.addEventListener('click', () => showView(t.dataset.view)); // (Settings is a tab-styled button that opens a dialog)
   $('#ejectBtn').addEventListener('click', ejectCard);
   $('#refreshBtn').addEventListener('click', () => loadCatalog(state.sourceId, true));
   $('#search').addEventListener('input', debounce((e) => { state.query = e.target.value; applyFilters(); }, 200));
