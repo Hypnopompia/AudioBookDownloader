@@ -1,7 +1,7 @@
 # ListenSync
 
-A simple desktop app (macOS, Windows, Linux) for finding free audiobooks, old-time radio and
-podcasts, listening to them on your computer, and syncing them to an SD card, USB stick or
+A simple desktop app (macOS, Windows, Linux) for finding free audiobooks, old-time radio, live
+concerts, lectures, vintage 78 rpm records and podcasts, listening to them on your computer, and syncing them to an SD card, USB stick or
 MP3 player (for example headphones with a card slot), with everything in the right play order.
 
 **[Download ListenSync](https://hypnopompia.github.io/ListenSync/)** for macOS or Windows
@@ -26,10 +26,16 @@ MP3 player (for example headphones with a card slot), with everything in the rig
 
 ## What it does
 
-- **Browse free audiobooks** from three Internet Archive collections:
+- **Browse free audio** from six Internet Archive collections:
   - **LibriVox**: about 21,000 public-domain books read by volunteers
   - **Community Audiobooks**: about 50,000 member uploads (quality varies)
   - **Old Time Radio**: about 8,800 classic radio dramas and comedies
+  - **Live Music**: about 37,000 of the most played concerts from the [Live Music Archive](https://archive.org/details/etree)
+    (bands that allow taping and sharing), with a shelf for each of the top bands. Shows that archive.org
+    only allows streaming, like most Grateful Dead soundboards, are left out.
+  - **Lectures & Speeches**: about 2,700 famous speeches, college lectures and talks, by topic
+  - **78 RPM Records**: about 11,700 of the most played sides from the [Great 78 Project](https://great78.archive.org),
+    by genre (jazz, blues, country, popular songs, classical and more)
 - **Home shelves**: Most popular, Top rated, Short listens, Recently added, and a shelf for each genre (Mystery & Crime, Adventure, Science Fiction, Fantasy, Horror, Romance, Humor, Children & Young Adult, Westerns, History, Biography, Short Stories, Poetry, Plays, Religion, Philosophy, Nature & Science, Travel). Genres come from each book's subject tags.
 - **Podcasts**: Apple's Top Podcasts charts (overall and by category) and search through
   [Podcast Index](https://podcastindex.org), falling back to Apple's directory without an API key.

@@ -492,37 +492,45 @@ body:has(#player:not([hidden])) .toasts { bottom: 110px; }
 .chapters-tools { display: flex; align-items: center; gap: 14px; }
 .order-select { padding: 5px 8px; font-size: 14px; }
 
-/* ---------------------------------------------------------------- source cards */
-.sources { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; }
+/* ---------------------------------------------------------------- source tabs */
+.sources { display: flex; flex-wrap: wrap; gap: 8px 22px; }
+.source-group { display: flex; flex-wrap: wrap; gap: 6px; }
 .source {
-  display: flex; align-items: center; gap: 14px; text-align: left;
-  padding: 12px 16px; border-radius: 14px; font-size: 16px;
+  position: relative; display: inline-flex; align-items: center; gap: 8px; white-space: nowrap;
+  padding: 5px 14px 5px 5px; border-radius: 999px; font-size: 15px;
   background: var(--surface); border: 1px solid var(--border); color: var(--text);
-  cursor: pointer; transition: border-color .15s, transform .1s, box-shadow .15s, background .15s;
+  cursor: pointer; transition: border-color .15s, background .15s;
 }
-.source:hover { border-color: var(--accent); box-shadow: var(--shadow); transform: translateY(-1px); }
+.source:hover { border-color: var(--accent); }
 .source-icon {
-  flex: none; width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center;
+  flex: none; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center;
   background: var(--accent-soft); color: var(--accent-strong);
 }
-.source-icon svg { width: 24px; height: 24px; }
-.source-text { display: flex; flex-direction: column; min-width: 0; }
-.source-text strong { font: 600 17px/1.2 var(--serif); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.source-text small { font-size: 13px; color: var(--muted); margin-top: 2px; }
-.source.active { background: var(--accent); border-color: var(--accent); color: white; font-weight: 400; box-shadow: var(--shadow); }
+.source-icon svg { width: 17px; height: 17px; }
+.source-name { font: 600 15px/1.2 var(--serif); }
+.source.active { background: var(--accent); border-color: var(--accent); color: white; }
 .source.active .source-icon { background: rgb(255 255 255 / 20%); color: white; }
-.source.active .source-text small { color: rgb(255 255 255 / 85%); }
+/* list downloading: a progress line along the bottom of the tab */
+.source.fetching::after {
+  content: ''; position: absolute; left: 16px; right: 16px; bottom: 2px; height: 2px; border-radius: 2px;
+  background: linear-gradient(to right, currentColor var(--pct, 4%), color-mix(in srgb, currentColor 20%, transparent) var(--pct, 4%));
+  opacity: .7;
+}
 
 /* white-on-teal surfaces use the deeper teal for contrast */
 .btn-primary, .source.active, .chip.active, .tab-count:not(:empty), .pbtn-main { background: var(--accent-solid); border-color: var(--accent-solid); }
 .btn-primary:hover:not(:disabled), .pbtn-main:hover { background: var(--accent-solid-hover); }
-.source.active .source-text strong { font-weight: 700; }
-.source.active .source-text small { color: rgb(255 255 255 / 92%); }
 
 /* ---------------------------------------------------------------- source tags */
-:root { --src-librivox: #1f6f6b; --src-community: #6b4a9a; --src-otr: #9a5a12; --src-podcasts: #a33a5a; }
+:root {
+  --src-librivox: #1f6f6b; --src-community: #6b4a9a; --src-otr: #9a5a12; --src-podcasts: #a33a5a;
+  --src-live: #2f6a2a; --src-lectures: #355f8f; --src-78s: #7a4d33;
+}
 @media (prefers-color-scheme: dark) {
-  :root { --src-librivox: #6cc7be; --src-community: #b89ae6; --src-otr: #e6ae5a; --src-podcasts: #ef8aa8; }
+  :root {
+    --src-librivox: #6cc7be; --src-community: #b89ae6; --src-otr: #e6ae5a; --src-podcasts: #ef8aa8;
+    --src-live: #8fd283; --src-lectures: #8db7e8; --src-78s: #d9a383;
+  }
 }
 .src-tag {
   display: inline-flex; align-items: center; gap: 4px; vertical-align: 1px;
@@ -535,6 +543,9 @@ body:has(#player:not([hidden])) .toasts { bottom: 110px; }
 .src-community { --src-c: var(--src-community); }
 .src-otr { --src-c: var(--src-otr); }
 .src-podcasts { --src-c: var(--src-podcasts); }
+.src-live { --src-c: var(--src-live); }
+.src-lectures { --src-c: var(--src-lectures); }
+.src-78s { --src-c: var(--src-78s); }
 .book-source { margin-top: -4px; }
 .row-sub .src-tag { margin-top: 2px; }
 .source-info > span:empty { display: none; }
@@ -542,6 +553,7 @@ body:has(#player:not([hidden])) .toasts { bottom: 110px; }
 /* drive usage by type (colours match the source tags) */
 .seg-books { background: var(--accent); }
 .seg-radio { background: var(--src-otr); }
+.seg-music { background: var(--src-live); }
 .seg-podcasts { background: var(--src-podcasts); }
 .seg-other-audio { background: color-mix(in srgb, var(--other) 55%, var(--accent)); }
 :root { --other-audio: #4a5f9a; }

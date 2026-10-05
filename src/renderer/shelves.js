@@ -1,6 +1,6 @@
 'use strict';
 
-/* global api, state, el, $, bookCard, onCardIds, queuedIds, applyFilters, ratingScore, SORTERS, showError, toast */
+/* global api, state, el, $, bookCard, onCardIds, queuedIds, applyFilters, ratingScore, SORTERS, showError, toast, noun, isMusic */
 
 // =========================================================================
 // Browse "Home": genre chips and shelves (rows of books).
@@ -20,7 +20,7 @@ function renderGenreChips(items) {
     }, label, count != null ? el('span', { class: 'chip-count' }, count.toLocaleString()) : null);
   $('#genres').replaceChildren(
     chip('home', 'Home'),
-    chip('all', state.sourceId === 'otr' ? 'All shows' : 'All books', items.length),
+    chip('all', `All ${noun()}`, items.length),
     ...state.genres.filter((g) => counts.get(g.id)).map((g) => chip(g.id, g.label, counts.get(g.id)))
   );
 }
@@ -60,7 +60,8 @@ function renderShelves(items) {
       genre: 'all',
       sort: 'rated',
     },
-    {
+    // records are all a few minutes long, so "short" says nothing there
+    isMusic() ? null : {
       title: 'Short listens',
       hint: 'under 2 hours',
       books: topBy(items, SORTERS.popular, (it) => it.runtime && it.runtime <= 7200),
@@ -68,7 +69,7 @@ function renderShelves(items) {
       sort: 'shortest',
     },
     { title: 'Recently added', books: topBy(items, SORTERS.newest), genre: 'all', sort: 'newest' },
-  ];
+  ].filter(Boolean);
   for (const g of state.genres) {
     const inGenre = items.filter((it) => it.genres?.includes(g.id));
     if (inGenre.length < 4) continue;

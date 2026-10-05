@@ -232,6 +232,7 @@ const state = {
   sources: [],
   sourceId: 'librivox',
   catalogs: {}, // sourceId -> { items, fetchedAt, langs }
+  fetching: {}, // sourceId -> { loaded, total } while a list downloads
   loading: null,
   filtered: [],
   shown: 0,
@@ -314,13 +315,33 @@ const SOURCE_STYLE = {
     tagline: '1930s–50s shows',
     path: 'M20 6H8.3l8.3-3.4-.8-1.8L3.2 6.1A2 2 0 0 0 2 8v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2zM7 20a3 3 0 1 1 0-6 3 3 0 0 1 0 6zm13-8h-2v-2h-2v2H4V8h16z',
   },
+  live: {
+    label: 'Live Music',
+    tagline: 'Concert recordings',
+    path: 'M12 3v10.6A4 4 0 1 0 14 17V7h4V3zm-2 16a2 2 0 1 1 0-4 2 2 0 0 1 0 4z',
+  },
+  lectures: {
+    label: 'Lectures',
+    tagline: 'Talks & speeches',
+    path: 'M4 4h16a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-6l1 3h2v2H7v-2h2l1-3H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zm0 2v9h16V6zm3 2h6v2H7zm0 3h10v2H7z',
+  },
+  '78s': {
+    label: '78 RPM',
+    tagline: 'Records, 1900s–50s',
+    path: 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 2a8 8 0 1 1 0 16 8 8 0 0 1 0-16zm0 2a6 6 0 0 0-6 6h2a4 4 0 0 1 4-4zm0 4a2 2 0 1 0 0 4 2 2 0 0 0 0-4z',
+  },
   podcasts: {
     tagline: 'Shows & episodes',
     path: 'M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.9V21h2v-3.1A7 7 0 0 0 19 11z',
   },
 };
 
-const SOURCE_SHORT = { librivox: 'LibriVox', community: 'Community', otr: 'Old Time Radio', podcasts: 'Podcast' };
+const SOURCE_SHORT = { librivox: 'LibriVox', community: 'Community', otr: 'Old Time Radio', live: 'Live Music', lectures: 'Lectures', '78s': '78 RPM', podcasts: 'Podcast' };
+
+/** What one item of a source is called, and whether it's read or heard. */
+const SOURCE_NOUN = { otr: ['show', 'shows'], live: ['concert', 'concerts'], lectures: ['talk', 'talks'], '78s': ['record', 'records'] };
+const noun = (n = 2, id = state.sourceId) => (SOURCE_NOUN[id] || ['book', 'books'])[n === 1 ? 0 : 1];
+const isMusic = (id = state.sourceId) => !!state.sources.find((s) => s.id === id)?.music;
 let sourceIndex = null; // id -> source, built from loaded catalogs
 
 /** Which source an item came from: podcast ids, the saved source, or the loaded catalogs. */
@@ -354,14 +375,14 @@ function sourceIcon(id) {
 }
 
 /** "Show" filter options worded for the current source. */
-const SHOW_OPTIONS = {
-  books: [['all', 'All books'], ['starred', 'Starred'], ['unread', 'Not read yet'], ['read', 'Already read'], ['hidden', 'Not interested']],
-  otr: [['all', 'All shows'], ['starred', 'Starred'], ['unread', 'Not heard yet'], ['read', 'Already heard'], ['hidden', 'Not interested']],
-  podcasts: [['all', 'All podcasts'], ['starred', 'Following'], ['hidden', 'Not interested']],
-};
+function showOptions(id) {
+  if (id === 'podcasts') return [['all', 'All podcasts'], ['starred', 'Following'], ['hidden', 'Not interested']];
+  const [notYet, already] = SOURCE_NOUN[id] ? ['Not heard yet', 'Already heard'] : ['Not read yet', 'Already read'];
+  return [['all', `All ${noun(2, id)}`], ['starred', 'Starred'], ['unread', notYet], ['read', already], ['hidden', 'Not interested']];
+}
 
 function renderShowOptions() {
-  const opts = SHOW_OPTIONS[state.sourceId] || SHOW_OPTIONS.books;
+  const opts = showOptions(state.sourceId);
   if (!opts.some(([v]) => v === state.show)) {
     state.show = 'all';
     api.settings.set({ show: 'all' }).catch(() => {});
@@ -369,28 +390,54 @@ function renderShowOptions() {
   $('#show').replaceChildren(...opts.map(([value, label]) => el('option', { value, selected: value === state.show }, label)));
 }
 
+/** Sources are shown as compact tabs in groups, so they wrap a group at a time on narrow windows. */
+const SOURCE_GROUPS = [
+  ['Audiobooks', ['librivox', 'community']],
+  ['Radio & talks', ['otr', 'lectures', 'podcasts']],
+  ['Music', ['live', '78s']],
+];
+
 function renderSources() {
   renderShowOptions();
+  const tab = (s) =>
+    el(
+      'button',
+      {
+        class: `source ${s.id === state.sourceId ? 'active' : ''}`,
+        role: 'tab',
+        dataset: { source: s.id },
+        'aria-selected': String(s.id === state.sourceId),
+        title: [SOURCE_STYLE[s.id]?.tagline, s.blurb].filter(Boolean).join('. '),
+        onclick: () => selectSource(s.id),
+      },
+      el('span', { class: 'source-icon' }, sourceIcon(s.id)),
+      el('span', { class: 'source-name' }, SOURCE_STYLE[s.id]?.label || s.name)
+    );
+  const grouped = new Set(SOURCE_GROUPS.flatMap(([, ids]) => ids));
+  const groups = SOURCE_GROUPS.map(([label, ids]) => [label, ids.map((id) => state.sources.find((s) => s.id === id)).filter(Boolean)]);
+  const rest = state.sources.filter((s) => !grouped.has(s.id));
+  if (rest.length) groups.push(['More', rest]);
   $('#sources').replaceChildren(
-    ...state.sources.map((s) =>
-      el(
-        'button',
-        {
-          class: `source ${s.id === state.sourceId ? 'active' : ''}`,
-          role: 'tab',
-          'aria-selected': String(s.id === state.sourceId),
-          title: s.blurb || '',
-          onclick: () => selectSource(s.id),
-        },
-        el('span', { class: 'source-icon' }, sourceIcon(s.id)),
-        el('span', { class: 'source-text' },
-          el('strong', {}, SOURCE_STYLE[s.id]?.label || s.name),
-          SOURCE_STYLE[s.id] ? el('small', {}, SOURCE_STYLE[s.id].tagline) : null)
-      )
-    )
+    ...groups
+      .filter(([, list]) => list.length)
+      .map(([label, list]) => el('div', { class: 'source-group', role: 'group', 'aria-label': label }, list.map(tab)))
   );
+  for (const [id, p] of Object.entries(state.fetching)) showFetching(id, p);
   const src = state.sources.find((s) => s.id === state.sourceId);
   $('#sourceBlurb').textContent = src?.blurb || '';
+}
+
+/** A thin progress line on a source's tab while its list downloads (also in the background). */
+function showFetching(id, p) {
+  if (p && p.total && p.loaded >= p.total) p = null;
+  if (p) state.fetching[id] = p;
+  else delete state.fetching[id];
+  const tab = document.querySelector(`.source[data-source="${CSS.escape(id)}"]`);
+  if (!tab) return;
+  tab.classList.toggle('fetching', !!p);
+  tab.style.setProperty('--pct', p && p.total ? `${Math.max(4, Math.min(100, (p.loaded / p.total) * 100))}%` : '4%');
+  const base = tab.title.replace(/ \(getting the list.*\)$/, '');
+  tab.title = p ? `${base} (getting the list${p.total ? `: ${Math.round((p.loaded / p.total) * 100)}%` : ''})` : base;
 }
 
 async function selectSource(id) {
@@ -442,6 +489,9 @@ async function loadCatalog(id, force = false) {
     sourceIndex = null;
     if (state.sourceId !== id) return;
     state.loading = null;
+    // each source has its own genres (live music's are its bands)
+    state.genres = data.genres || [];
+    if (!['home', 'all'].includes(state.genre) && !state.genres.some((g) => g.id === state.genre)) state.genre = 'home';
     renderLangs();
     applyFilters();
   } catch (err) {
@@ -449,7 +499,7 @@ async function loadCatalog(id, force = false) {
     state.loading = null;
     $('#loadState').replaceChildren(
       el('div', { class: 'state' },
-        el('h3', {}, 'The list of audiobooks could not be loaded'),
+        el('h3', {}, `The list of ${noun()} could not be loaded`),
         el('div', {}, err.message),
         el('button', { class: 'btn btn-primary', onclick: () => loadCatalog(id, true) }, 'Try again'))
     );
@@ -461,8 +511,8 @@ function renderLoading(p) {
   const bar = el('div', { class: `progress ${pct == null ? 'indeterminate' : ''}` }, el('span', { style: pct != null ? { width: `${pct}%` } : {} }));
   $('#loadState').replaceChildren(
     el('div', { class: 'state' },
-      el('h3', {}, 'Getting the list of audiobooks…'),
-      el('div', {}, p && p.total ? `${p.loaded.toLocaleString()} of ${p.total.toLocaleString()} books` : 'This only takes a while the first time. After that it opens instantly.'),
+      el('h3', {}, `Getting the list of ${noun()}…`),
+      el('div', {}, p && p.total ? `${p.loaded.toLocaleString()} of ${p.total.toLocaleString()} ${noun()}` : 'This only takes a while the first time. After that it opens instantly.'),
       bar)
   );
 }
@@ -476,7 +526,12 @@ function renderLangs() {
   }
   sel.replaceChildren(...opts);
   const has = (k) => data.langs.some(([key]) => key === k);
-  sel.value = state.lang && has(state.lang) ? state.lang : has('eng') && state.lang ? 'eng' : '';
+  // Hide the filter when most items don't say their language (live music, many talks):
+  // choosing English would hide them all.
+  const known = data.langs.reduce((a, [, n]) => a + n, 0);
+  const useLang = known >= data.items.length * 0.7;
+  sel.closest('label').hidden = !useLang;
+  sel.value = !useLang ? '' : state.lang && has(state.lang) ? state.lang : has('eng') && state.lang ? 'eng' : '';
 }
 
 const SORTERS = {
@@ -518,7 +573,7 @@ function applyFilters() {
     state.shown = 0;
     $('#grid').replaceChildren();
     $('#browseScroller').scrollTop = 0;
-    $('#resultCount').textContent = `${items.length.toLocaleString()} books · list updated ${fmtAgo(data.fetchedAt)}`;
+    $('#resultCount').textContent = `${items.length.toLocaleString()} ${noun(items.length)} · list updated ${fmtAgo(data.fetchedAt)}`;
     $('#loadState').replaceChildren();
     renderShelves(items);
     return;
@@ -529,11 +584,11 @@ function applyFilters() {
   state.shown = 0;
   $('#grid').replaceChildren();
   $('#browseScroller').scrollTop = 0;
-  $('#resultCount').textContent = `${state.filtered.length.toLocaleString()} ${state.filtered.length === 1 ? 'book' : 'books'} · list updated ${fmtAgo(data.fetchedAt)}`;
+  $('#resultCount').textContent = `${state.filtered.length.toLocaleString()} ${noun(state.filtered.length)} · list updated ${fmtAgo(data.fetchedAt)}`;
   if (!state.filtered.length) {
     $('#loadState').replaceChildren(
-      el('div', { class: 'state' }, el('h3', {}, 'No audiobooks match'),
-        el('div', {}, state.show === 'all' ? 'Try a different search word, or choose "All languages".' : 'Try a different search word, or set "Show" to "All books".'))
+      el('div', { class: 'state' }, el('h3', {}, `No ${noun()} match`),
+        el('div', {}, state.show === 'all' ? 'Try a different search word, or choose "All languages".' : `Try a different search word, or set "Show" to "All ${noun()}".`))
     );
   } else {
     $('#loadState').replaceChildren();
@@ -634,7 +689,7 @@ async function openBook(id, item) {
 
 function fitInfo(bytes) {
   const drive = currentDrive();
-  if (!drive) return { ok: false, text: 'Plug in the drive to put this book on it.', noCard: true };
+  if (!drive) return { ok: false, text: 'Plug in the drive to put this on it.', noCard: true };
   const pending = state.card?.pendingBytes || 0;
   const free = (state.card?.free ?? drive.free) - pending;
   if (bytes <= free) return { ok: true, text: `Fits on the drive (${fmtBytes(free - bytes)} will be left).`, free };
@@ -661,6 +716,7 @@ function fitInfo(bytes) {
 /** Star / Read / Not interested toggle buttons for a book. */
 function statusButtons(key, meta, rerender, podcast = false) {
   const e = libEntry(key);
+  const heard = !!SOURCE_NOUN[meta.source]; // radio, music and talks are heard, not read
   const toggle = (label, iconName, active, patch) =>
     el('button', {
       class: `toggle ${active ? 'on' : ''}`,
@@ -678,7 +734,7 @@ function statusButtons(key, meta, rerender, podcast = false) {
     }, icon(iconName), label);
   return el('div', { class: 'toggles' },
     toggle(podcast ? (e.starred ? 'Following' : 'Follow') : e.starred ? 'Starred' : 'Star', e.starred ? 'star' : 'starOutline', !!e.starred, { starred: !e.starred }),
-    toggle(e.status === 'read' ? 'Read' : 'Mark as read', 'check', e.status === 'read', { status: e.status === 'read' ? null : 'read' }),
+    toggle(e.status === 'read' ? (heard ? 'Heard' : 'Read') : heard ? 'Mark as heard' : 'Mark as read', 'check', e.status === 'read', { status: e.status === 'read' ? null : 'read' }),
     toggle('Not interested', 'ban', e.status === 'not_interested', { status: e.status === 'not_interested' ? null : 'not_interested' }));
 }
 
@@ -689,8 +745,8 @@ function refreshBookDialog() {
 
 // ------------------------------------------------------------ chapters / episodes
 
-const unitWord = (d, n = 2) => (d.unit === 'episode' ? 'episode' : 'chapter') + (n === 1 ? '' : 's');
-const UnitTitle = (d) => (d.unit === 'episode' ? 'Episodes' : 'Chapters');
+const unitWord = (d, n = 2) => (d.unit || 'chapter') + (n === 1 ? '' : 's');
+const UnitTitle = (d) => unitWord(d).replace(/^./, (c) => c.toUpperCase());
 
 /** Track numbers of a book that are on the plugged-in card (across all its folders). */
 function numbersOnCard(identifier) {
@@ -805,7 +861,7 @@ function renderBook(d) {
   addFact('Length', fmtRuntime(d.runtime));
   addFact(UnitTitle(d), total ? total.toLocaleString() : 'No MP3 files');
   addFact('Download size', d.totalBytes ? fmtBytes(d.totalBytes) : '');
-  addFact('Language', langName(langKey(d.language)));
+  if (d.language) addFact('Language', langName(langKey(d.language)));
   addFact(podcast ? 'Newest episode' : 'Published', d.date);
   if (onCardNums.size) addFact('On the drive', allOnCard ? `All ${unitWord(d)}` : `${onCardNums.size.toLocaleString()} of ${total.toLocaleString()} ${unitWord(d)}`);
   if (savedNums.size) addFact('On this computer', savedNums.size >= total ? `All ${unitWord(d)}` : `${savedNums.size.toLocaleString()} of ${total.toLocaleString()} ${unitWord(d)}`);
@@ -968,7 +1024,7 @@ function renderBook(d) {
     renderBook(d);
   };
   const stopped = pos && pos.tracks && libEntry(id).status !== 'read'
-    ? el('div', { class: 'muted' }, `You stopped at ${d.unit === 'episode' ? 'episode' : 'chapter'} ${pos.number ?? pos.track + 1}${pos.number ? '' : ` of ${pos.tracks}`}, ${fmtClock(pos.time)}.`)
+    ? el('div', { class: 'muted' }, `You stopped at ${unitWord(d, 1)} ${pos.number ?? pos.track + 1}${pos.number ? '' : ` of ${pos.tracks}`}, ${fmtClock(pos.time)}.`)
     : null;
 
   dlg.replaceChildren(
@@ -1181,11 +1237,12 @@ function renderDrivePanel() {
 
 /** Space used on the drive, split by type of content. */
 function usageByType(c) {
-  const sizes = { books: 0, radio: 0, podcasts: 0, otherAudio: 0 };
+  const sizes = { books: 0, radio: 0, music: 0, podcasts: 0, otherAudio: 0 };
   for (const b of c.books) {
     const src = b.identifier ? sourceOf(b.identifier, b.source) : null;
     if (src === 'podcasts') sizes.podcasts += b.size;
     else if (src === 'otr') sizes.radio += b.size;
+    else if (src === 'live' || src === '78s') sizes.music += b.size;
     else if (src) sizes.books += b.size;
     else sizes.otherAudio += b.size; // folders copied onto the drive by hand
   }
@@ -1210,6 +1267,7 @@ function renderUsage() {
   const types = [
     ['seg-books', 'Audiobooks', u.books],
     ['seg-radio', 'Radio shows', u.radio],
+    ['seg-music', 'Music', u.music],
     ['seg-podcasts', 'Podcasts', u.podcasts],
     ['seg-other-audio', 'Other audio', u.otherAudio],
   ].filter(([, , bytes]) => bytes > 0);
@@ -1361,7 +1419,7 @@ function renderCardView() {
 }
 
 function bookRow(b, i) {
-  const unit = b.unit === 'episode' ? 'episode' : 'chapter';
+  const unit = b.unit || 'chapter';
   const count = b.trackNumbers && b.trackTotal && b.trackNumbers.length < b.trackTotal
     ? `${b.trackNumbers.length} of ${b.trackTotal} ${unit}s`
     : `${b.chapters} ${b.chapters === 1 ? unit : `${unit}s`}`;
@@ -1678,9 +1736,12 @@ async function init() {
   }
 
   api.catalog.onProgress((p) => {
+    showFetching(p.sourceId, p);
     if (p.sourceId === state.sourceId && state.loading === p.sourceId) renderLoading(p);
   });
-  api.catalog.onUpdated(async ({ sourceId }) => {
+  api.catalog.onUpdated(async ({ sourceId, fetchedAt }) => {
+    showFetching(sourceId, null);
+    if (state.catalogs[sourceId]?.fetchedAt >= fetchedAt) return; // already showing this list
     delete state.catalogs[sourceId];
     if (sourceId === state.sourceId && !$('#search').value) await loadCatalog(sourceId);
   });
@@ -1714,7 +1775,6 @@ async function init() {
   refreshLocal();
   state.sources = await api.catalog.sources();
   await initPodcasts();
-  state.genres = await api.catalog.genres();
   state.update = await api.updates.status();
   renderUpdateBanner();
   api.updates.onChange((s) => {

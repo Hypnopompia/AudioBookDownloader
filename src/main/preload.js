@@ -23,7 +23,6 @@ contextBridge.exposeInMainWorld('api', {
   openExternal: (url) => call('open:external', url),
   catalog: {
     sources: () => call('catalog:sources'),
-    genres: () => call('catalog:genres'),
     load: (sourceId, force) => call('catalog:load', sourceId, force),
     details: (identifier, quality) => call('book:details', identifier, quality),
     onProgress: (cb) => on('catalog:progress', cb),

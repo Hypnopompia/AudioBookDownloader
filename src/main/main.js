@@ -183,6 +183,8 @@ function handle(channel, fn) {
   });
 }
 
+const catalogProgress = (p) => send('catalog:progress', p);
+
 function registerIpc() {
   handle('app:info', () => ({ platform: process.platform, version: app.getVersion() }));
   handle('settings:get', () => settings.get());
@@ -190,14 +192,12 @@ function registerIpc() {
   handle('open:external', (url) => openExternal(url));
 
   handle('catalog:sources', () => catalog.sources());
-  handle('catalog:genres', () => catalog.genres());
   handle('catalog:load', async (sourceId, force) => {
-    const onProgress = (p) => send('catalog:progress', p);
-    const data = await catalog.load(sourceId, { force: !!force, onProgress });
+    const data = await catalog.load(sourceId, { force: !!force, onProgress: catalogProgress });
     if (data.stale) {
       catalog
-        .refresh(sourceId, onProgress)
-        .then(() => send('catalog:updated', { sourceId }))
+        .refresh(sourceId, catalogProgress)
+        .then((fresh) => send('catalog:updated', { sourceId, fetchedAt: fresh.fetchedAt }))
         .catch((err) => console.error('Background refresh failed', err));
     }
     return data;
@@ -484,6 +484,13 @@ app.whenReady().then(() => {
 
   registerIpc();
   createWindow();
+  // after the first screen has loaded, fetch the other sources' lists in the background
+  setTimeout(() => {
+    catalog.prefetch({
+      onProgress: catalogProgress,
+      onDone: (sourceId, data) => send('catalog:updated', { sourceId, fetchedAt: data.fetchedAt }),
+    });
+  }, 5000);
   pollDrives(true);
   updater.init((status) => send('update:changed', status));
   setInterval(() => pollDrives(false).catch(() => {}), process.platform === 'win32' ? 5000 : 3000);
