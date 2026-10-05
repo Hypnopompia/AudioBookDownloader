@@ -58,6 +58,11 @@
       </nav>
 
       <div id="miniProgress" class="mini-progress" hidden></div>
+
+      <button class="tab settings-tab" id="settingsBtn">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19.4 13a7.5 7.5 0 0 0 0-2l2.1-1.6-2-3.4-2.5 1a7.6 7.6 0 0 0-1.7-1L15 3.3h-4L10.7 6a7.6 7.6 0 0 0-1.7 1l-2.5-1-2 3.4L6.6 11a7.5 7.5 0 0 0 0 2l-2.1 1.6 2 3.4 2.5-1c.5.4 1.1.7 1.7 1l.3 2.7h4l.3-2.7c.6-.3 1.2-.6 1.7-1l2.5 1 2-3.4zM12 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z"/></svg>
+        <span>Settings</span>
+      </button>
     </aside>
 
     <main class="main">
@@ -80,9 +85,10 @@
                 <option value="hidden">Not interested</option>
               </select>
             </label>
-            <label class="select"><span>Sort</span>
+            <label class="select" id="sortLabel"><span>Sort</span>
               <select id="sort">
                 <option value="popular">Most popular</option>
+                <option value="rated">Highest rated</option>
                 <option value="title">Title A–Z</option>
                 <option value="author">Author A–Z</option>
                 <option value="newest">Newest</option>
@@ -98,7 +104,9 @@
           </div>
         </header>
         <div class="scroller" id="browseScroller">
+          <div class="genres" id="genres" role="tablist" aria-label="Genres"></div>
           <div id="loadState"></div>
+          <div class="shelves" id="shelves"></div>
           <div class="grid" id="grid"></div>
           <div id="sentinel" class="sentinel"></div>
         </div>
@@ -174,10 +182,12 @@
   <dialog id="bookDialog" class="dialog dialog-wide"></dialog>
   <dialog id="roomDialog" class="dialog"></dialog>
   <dialog id="confirmDialog" class="dialog dialog-small"></dialog>
+  <dialog id="settingsDialog" class="dialog"></dialog>
   <div id="toasts" class="toasts" aria-live="polite"></div>
 
   <script src="app.js"></script>
   <script src="library.js"></script>
   <script src="player.js"></script>
+  <script src="shelves.js"></script>
 </body>
 </html>

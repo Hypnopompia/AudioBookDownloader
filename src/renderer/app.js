@@ -220,6 +220,8 @@ const state = {
   autoEject: false,
   view: 'browse',
   show: 'all',
+  genre: 'home', // 'home' (shelves), 'all', or a genre id
+  genres: [],
   lib: {}, // per-book starred / status / position (see libstate.js)
   local: { books: [], total: 0, root: '' }, // books saved on this computer
 };
@@ -362,7 +364,8 @@ const SORTERS = {
   popular: (a, b) => b.downloads - a.downloads,
   title: (a, b) => a.title.localeCompare(b.title, undefined, { numeric: true, sensitivity: 'base' }),
   author: (a, b) => (a.author || '~').localeCompare(b.author || '~', undefined, { sensitivity: 'base' }) || a.title.localeCompare(b.title),
-  newest: (a, b) => (b.year || '').localeCompare(a.year || '') || b.downloads - a.downloads,
+  rated: (a, b) => ratingScore(b) - ratingScore(a) || b.downloads - a.downloads,
+  newest: (a, b) => (b.added || b.year || '').localeCompare(a.added || a.year || '') || b.downloads - a.downloads,
   shortest: (a, b) => (a.runtime || Infinity) - (b.runtime || Infinity),
   longest: (a, b) => (b.runtime || 0) - (a.runtime || 0),
 };
@@ -384,6 +387,21 @@ function applyFilters() {
     if (show === 'unread') return !e?.status;
     return e?.status !== 'not_interested';
   });
+  renderGenreChips(items);
+  const home = state.genre === 'home' && !terms.length;
+  $('#sortLabel').hidden = home;
+  if (home) {
+    state.filtered = [];
+    state.shown = 0;
+    $('#grid').replaceChildren();
+    $('#browseScroller').scrollTop = 0;
+    $('#resultCount').textContent = `${items.length.toLocaleString()} books · list updated ${fmtAgo(data.fetchedAt)}`;
+    $('#loadState').replaceChildren();
+    renderShelves(items);
+    return;
+  }
+  $('#shelves').replaceChildren();
+  if (state.genre !== 'home' && state.genre !== 'all') items = items.filter((it) => it.genres?.includes(state.genre));
   state.filtered = [...items].sort(SORTERS[state.sort] || SORTERS.popular);
   state.shown = 0;
   $('#grid').replaceChildren();
@@ -420,10 +438,19 @@ function decorateCover(cover, id, onCard, queued) {
   }
 }
 
+/** Rating adjusted for how many reviews it has, so one 5-star review doesn't top the list. */
+function ratingScore(it) {
+  if (!it.rating || !it.reviews) return 0;
+  const PRIOR = 3, WEIGHT = 3;
+  return (it.rating * it.reviews + PRIOR * WEIGHT) / (it.reviews + WEIGHT);
+}
+
+const fmtRating = (rating) => (rating ? `★ ${rating.toFixed(1)}` : '');
+
 function bookCard(it, onCard, queued) {
   const cover = coverEl(it.id, it.title, it.author);
   decorateCover(cover, it.id, onCard, queued);
-  const meta = [fmtRuntime(it.runtime), state.lang ? '' : langName(it.lk)].filter(Boolean).join(' · ');
+  const meta = [fmtRating(it.rating), fmtRuntime(it.runtime), state.lang ? '' : langName(it.lk)].filter(Boolean).join(' · ');
   return el(
     'button',
     { class: 'book', dataset: { id: it.id }, onclick: () => openBook(it.id, it) },
@@ -445,10 +472,9 @@ function renderMore() {
 /** Re-draw badges on visible cards after the card or queue changes. */
 function refreshBadges() {
   if (state.view === 'starred') renderStarred();
-  if (!state.shown) return;
   const onCard = onCardIds();
   const queued = queuedIds();
-  for (const node of $('#grid').children) decorateCover(node.querySelector('.cover'), node.dataset.id, onCard, queued);
+  for (const node of document.querySelectorAll('#browseScroller .book')) decorateCover(node.querySelector('.cover'), node.dataset.id, onCard, queued);
 }
 
 // =========================================================================
@@ -556,6 +582,7 @@ function renderBook(d) {
 
   const facts = el('dl', { class: 'facts' });
   const addFact = (k, v) => v && facts.append(el('dt', {}, k), el('dd', {}, v));
+  if (d.rating) addFact('Rating', `${'★'.repeat(Math.round(d.rating))}${'☆'.repeat(5 - Math.round(d.rating))}  ${d.rating.toFixed(1)} (${d.reviews} ${d.reviews === 1 ? 'review' : 'reviews'} on archive.org)`);
   addFact('Length', fmtRuntime(d.runtime));
   addFact('Chapters', d.tracks.length ? String(d.tracks.length) : 'No MP3 files');
   addFact('Download size', d.totalBytes ? fmtBytes(d.totalBytes) : '');
@@ -1233,6 +1260,10 @@ async function init() {
   $('#ejectBtn').addEventListener('click', ejectCard);
   $('#refreshBtn').addEventListener('click', () => loadCatalog(state.sourceId, true));
   $('#search').addEventListener('input', debounce((e) => { state.query = e.target.value; applyFilters(); }, 200));
+  $('#browseScroller').addEventListener('click', (e) => {
+    const more = e.target.closest('[data-see-all]');
+    if (more) seeAll(more.dataset.seeAll, more.dataset.sort);
+  });
   $('#lang').addEventListener('change', (e) => {
     state.lang = e.target.value;
     api.settings.set({ language: state.lang });
@@ -1294,6 +1325,8 @@ async function init() {
   initPlayer();
   refreshLocal();
   state.sources = await api.catalog.sources();
+  state.genres = await api.catalog.genres();
+  $('#settingsBtn').addEventListener('click', openSettings);
   renderSources();
   renderDrivePanel();
   renderCardView();

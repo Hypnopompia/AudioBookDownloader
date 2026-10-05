@@ -32,7 +32,47 @@ const SOURCES = [
   },
 ];
 
-const FIELDS = 'identifier,title,creator,downloads,publicdate,language,runtime,subject';
+const FIELDS = 'identifier,title,creator,downloads,publicdate,language,runtime,subject,avg_rating,num_reviews';
+const CACHE_VERSION = 2; // bump when the cached fields change
+
+/**
+ * Genres for browsing, matched against each book's subject tags (and title).
+ * A book can be in several genres.
+ */
+const GENRES = [
+  { id: 'mystery', label: 'Mystery & Crime', words: ['mystery', 'mysteries', 'detective', 'detectives', 'crime', 'murder', 'suspense', 'sherlock', 'thriller'] },
+  { id: 'adventure', label: 'Adventure', words: ['adventure', 'adventures', 'pirates', 'pirate', 'exploration', 'sea stories', 'survival'] },
+  { id: 'scifi', label: 'Science Fiction', words: ['science fiction', 'sci-fi', 'scifi', 'sf', 'space', 'time travel', 'dystopia', 'utopia'] },
+  { id: 'fantasy', label: 'Fantasy & Fairy Tales', words: ['fantasy', 'fairy tales', 'fairy tale', 'fairytales', 'fables', 'fable', 'myths', 'mythology', 'legends', 'folklore', 'folk tales'] },
+  { id: 'horror', label: 'Horror & Ghost Stories', words: ['horror', 'ghost', 'ghosts', 'ghost stories', 'uncanny', 'supernatural', 'gothic', 'vampire', 'vampires', 'weird'] },
+  { id: 'romance', label: 'Romance', words: ['romance', 'love story', 'love stories'] },
+  { id: 'humor', label: 'Humor', words: ['humor', 'humour', 'comedy', 'satire', 'funny', 'humorous', 'parody'] },
+  { id: 'children', label: 'Children & Young Adult', words: ['children', "children's", 'childrens', 'kids', 'juvenile', 'young adult', 'teen', 'teens', 'youth', 'nursery rhymes'] },
+  { id: 'western', label: 'Westerns', words: ['western', 'westerns', 'cowboy', 'cowboys', 'frontier'] },
+  { id: 'historical', label: 'History & Historical Fiction', words: ['history', 'historical', 'historical fiction', 'war', 'civil war', 'wwi', 'world war i', 'world war ii', 'ancient', 'medieval'] },
+  { id: 'biography', label: 'Biography & Memoir', words: ['biography', 'autobiography', 'memoir', 'memoirs', 'letters', 'diary', 'diaries'] },
+  { id: 'short', label: 'Short Stories', words: ['short stories', 'short story', 'anthology', 'collection'] },
+  { id: 'poetry', label: 'Poetry', words: ['poetry', 'poem', 'poems', 'verse', 'ballads', 'sonnets'] },
+  { id: 'drama', label: 'Plays & Drama', words: ['drama', 'play', 'plays', 'tragedy', 'shakespeare', 'dramatic reading', 'radio drama', 'theatre', 'theater'] },
+  { id: 'religion', label: 'Religion & Spirituality', words: ['religion', 'religious', 'bible', 'christianity', 'christian', 'theology', 'sermons', 'sermon', 'faith', 'catholic', 'new testament', 'old testament', 'jesus', 'spirituality', 'buddhism', 'islam', 'judaism', 'prayer'] },
+  { id: 'philosophy', label: 'Philosophy & Ideas', words: ['philosophy', 'psychology', 'essays', 'essay', 'morality', 'ethics', 'politics', 'economics'] },
+  { id: 'nature', label: 'Nature & Science', ignore: /science[- ]fiction/g, words: ['nature', 'animals', 'birds', 'science', 'plants', 'insects', 'natural history', 'astronomy', 'biology', 'dogs', 'horses'] },
+  { id: 'travel', label: 'Travel', words: ['travel', 'travels', 'journey', 'voyage', 'voyages', 'travelogue'] },
+];
+const GENRE_RES = GENRES.map((g) => ({
+  id: g.id,
+  ignore: g.ignore || null,
+  re: new RegExp(`(^|[^a-z])(${g.words.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})($|[^a-z])`),
+}));
+
+function genresFor(subjects, title) {
+  const text = subjects.map((s) => s.toLowerCase()).join(' | ');
+  const out = GENRE_RES.filter((g) => g.re.test(g.ignore ? text.replace(g.ignore, '') : text)).map((g) => g.id);
+  // a few strong title hints when tags are missing
+  if (!out.length && /\b(poems|poetry|verses)\b/i.test(title)) out.push('poetry');
+  if (!out.length && /\b(stories|tales)\b/i.test(title)) out.push('short');
+  return out;
+}
 const MAX_AGE_MS = 7 * 24 * 3600 * 1000;
 const GENERIC_TAGS = new Set([
   'librivox', 'audiobook', 'audiobooks', 'audio book', 'audio books', 'literature', 'audio',
@@ -42,6 +82,11 @@ const GENERIC_TAGS = new Set([
 let cacheDir = null;
 function init(dir) {
   cacheDir = dir;
+  // remove caches written by older versions (they lack ratings and genres)
+  fs.readdir(dir)
+    .then((names) => names.filter((n) => /^catalog-/.test(n) && !n.startsWith(`catalog-v${CACHE_VERSION}-`)))
+    .then((old) => Promise.all(old.map((n) => fs.rm(path.join(dir, n), { force: true }))))
+    .catch(() => {});
 }
 
 function getSource(id) {
@@ -51,21 +96,27 @@ function getSource(id) {
 }
 
 function cachePath(id) {
-  return path.join(cacheDir, `catalog-${id}.json`);
+  return path.join(cacheDir, `catalog-v${CACHE_VERSION}-${id}.json`);
 }
 
 function compact(it) {
   const creators = Array.isArray(it.creator) ? it.creator : it.creator ? [it.creator] : [];
   let subjects = Array.isArray(it.subject) ? it.subject : it.subject ? String(it.subject).split(';') : [];
-  subjects = subjects
-    .map((s) => String(s).trim())
-    .filter((s) => s && s.length < 40 && !GENERIC_TAGS.has(s.toLowerCase()));
+  subjects = subjects.map((s) => String(s).trim()).filter(Boolean);
+  const title = String(first(it.title) || it.identifier).trim();
+  const genres = genresFor(subjects, title);
+  subjects = subjects.filter((s) => s.length < 40 && !GENERIC_TAGS.has(s.toLowerCase()));
+  const reviews = Number(it.num_reviews) || 0;
   return {
     id: it.identifier,
-    title: String(first(it.title) || it.identifier).trim(),
+    title,
     author: creators.slice(0, 3).join(', '),
     downloads: Number(it.downloads) || 0,
     year: it.publicdate ? String(first(it.publicdate)).slice(0, 4) : '',
+    added: it.publicdate ? String(first(it.publicdate)).slice(0, 10) : '',
+    rating: reviews && Number(it.avg_rating) ? Math.round(Number(it.avg_rating) * 10) / 10 : null,
+    reviews,
+    genres,
     lang: String(first(it.language) || '').trim(),
     runtime: parseDuration(it.runtime),
     tags: [...new Set(subjects)].slice(0, 8).join(', '),
@@ -190,6 +241,11 @@ function buildTracks(files, quality) {
 
 const detailCache = new Map();
 
+function averageRating(reviews) {
+  const stars = reviews.map((r) => Number(r.stars)).filter((n) => n >= 1 && n <= 5);
+  return stars.length ? Math.round((stars.reduce((a, b) => a + b, 0) / stars.length) * 10) / 10 : null;
+}
+
 async function getDetails(identifier, quality = 'standard') {
   if (typeof identifier !== 'string' || !/^[\w.-]+$/.test(identifier)) throw new Error('Invalid book id');
   let meta = detailCache.get(identifier);
@@ -220,6 +276,8 @@ async function getDetails(identifier, quality = 'standard') {
     date: String(first(m.date) || first(m.publicdate) || '').slice(0, 10),
     runtime: Math.max(parseDuration(m.runtime) || 0, trackSeconds) || null, // some listed runtimes are wrong
     tags: [...new Set(subjects)].slice(0, 12),
+    rating: Number(meta.reviews?.length) ? averageRating(meta.reviews) : null,
+    reviews: Array.isArray(meta.reviews) ? meta.reviews.length : 0,
     cover: `https://archive.org/services/img/${identifier}`,
     url: `https://archive.org/details/${identifier}`,
     format,
@@ -237,4 +295,6 @@ module.exports = {
   getDetails,
   buildTracks,
   sources: () => SOURCES.map(({ id, name, blurb }) => ({ id, name, blurb })),
+  genres: () => GENRES.map(({ id, label }) => ({ id, label })),
+  genresFor,
 };

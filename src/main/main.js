@@ -141,6 +141,7 @@ function registerIpc() {
   handle('open:external', (url) => openExternal(url));
 
   handle('catalog:sources', () => catalog.sources());
+  handle('catalog:genres', () => catalog.genres());
   handle('catalog:load', async (sourceId, force) => {
     const onProgress = (p) => send('catalog:progress', p);
     const data = await catalog.load(sourceId, { force: !!force, onProgress });
@@ -238,7 +239,13 @@ function registerIpc() {
     const { free } = await drives.space(mount);
     if (details.totalBytes + downloader.pendingBytes(mount) > free) throw new Error('NO_SPACE');
     touchedMounts.add(mount);
-    return downloader.add(details, { mount, driveLabel: drive?.label || 'SD card', source: source || existing?.meta.source, toCard: true });
+    return downloader.add(details, {
+      mount,
+      driveLabel: drive?.label || 'SD card',
+      source: source || existing?.meta.source,
+      toCard: true,
+      splitMinutes: Number(settings.get().splitMinutes) || 0,
+    });
   });
   handle('downloads:cancel', (id) => downloader.cancel(id));
   handle('downloads:retry', (id) => downloader.retry(id));

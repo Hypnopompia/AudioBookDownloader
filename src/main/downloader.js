@@ -19,6 +19,7 @@ const fsSync = require('node:fs');
 const path = require('node:path');
 const { Readable, Transform } = require('node:stream');
 const { pipeline } = require('node:stream/promises');
+const crypto = require('node:crypto');
 const { UA, sleep, friendlyNetError } = require('./http');
 const sdcard = require('./sdcard');
 const { space } = require('./drives');
@@ -70,7 +71,7 @@ class Downloader extends EventEmitter {
     );
   }
 
-  add(details, { mount = null, driveLabel = '', source, toCard = true, keepLocal = false }) {
+  add(details, { mount = null, driveLabel = '', source, toCard = true, keepLocal = false, splitMinutes = 0 }) {
     if (!details.tracks.length) throw new Error('This item has no MP3 files to download.');
     if (this.hasBook(details.identifier, mount, toCard)) throw new Error('This book is already in the download list.');
     const job = {
@@ -87,6 +88,7 @@ class Downloader extends EventEmitter {
       totalBytes: details.totalBytes,
       toCard,
       keepLocal: keepLocal || !toCard,
+      splitMinutes: Number(splitMinutes) || 0,
       mount,
       driveLabel,
       status: 'queued',
@@ -269,8 +271,9 @@ class Downloader extends EventEmitter {
         localFiles,
         {
           signal,
+          splitMinutes: job.splitMinutes,
           onBytes: (b) => {
-            job.copied += b;
+            job.copied = Math.min(job.totalBytes, job.copied + b);
             bytesThisFile += b;
             while (fileIdx < n - 1 && bytesThisFile >= sizes[fileIdx]) {
               bytesThisFile -= sizes[fileIdx];
@@ -356,6 +359,7 @@ class Downloader extends EventEmitter {
       let timer = setTimeout(() => stall.abort(new Error('Download stalled')), STALL_MS);
       const both = AbortSignal.any([signal, stall.signal]);
       let got = 0;
+      const hash = crypto.createHash('md5');
       setBytes(0);
       try {
         const res = await fetch(url, { headers: { 'User-Agent': UA }, signal: both });
@@ -363,6 +367,7 @@ class Downloader extends EventEmitter {
         const counter = new Transform({
           transform(chunk, _enc, cb) {
             got += chunk.length;
+            hash.update(chunk);
             setBytes(got);
             clearTimeout(timer);
             timer = setTimeout(() => stall.abort(new Error('Download stalled')), STALL_MS);
@@ -371,6 +376,8 @@ class Downloader extends EventEmitter {
         });
         await pipeline(Readable.fromWeb(res.body), counter, fsSync.createWriteStream(part), { signal: both });
         if (track.size && got !== track.size) throw new Error(`Incomplete download of "${track.title}"`);
+        // archive.org publishes an MD5 for every file; a mismatch means a damaged download, so retry
+        if (track.md5 && hash.digest('hex') !== track.md5) throw new Error(`"${track.title}" was damaged while downloading`);
         await fs.rename(part, dest);
         return;
       } catch (err) {

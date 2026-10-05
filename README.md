@@ -10,7 +10,9 @@ in the order the headphones will play them.
   - **LibriVox**: about 21,000 public-domain books read by volunteers
   - **Community Audiobooks**: about 50,000 member uploads (quality varies)
   - **Old Time Radio**: about 8,800 classic radio dramas and comedies
-- Search by title, author or subject, filter by language, and sort by popularity, title, author, newest or length.
+- **Home shelves**: Most popular, Top rated, Short listens, Recently added, and a shelf for each genre (Mystery & Crime, Adventure, Science Fiction, Fantasy, Horror, Romance, Humor, Children & Young Adult, Westerns, History, Biography, Short Stories, Poetry, Plays, Religion, Philosophy, Nature & Science, Travel). Genres come from each book's subject tags.
+- **Genre chips** with counts, search by title, author or subject, filter by language, and sort by popularity, rating, title, author, newest or length.
+- **Ratings** from archive.org listeners on covers and in book details. "Highest rated" weights by number of reviews, so a single 5-star review doesn't top the list. Only a minority of books have ratings.
 - See cover art, author, length, description, download size and the chapter list for each book.
 - **Caches the book list** on the computer, so it opens instantly after the first load. It refreshes in the background once a week, or when you click "Refresh list".
 - **Detects the SD card automatically** and shows how much space is used and free, plus roughly how many hours of listening still fit.
@@ -23,6 +25,8 @@ in the order the headphones will play them.
 - **Starred** in the sidebar: quick access to every book you've starred.
 - **Check books** on the SD card screen: reads every chapter back from the card and compares its size and MD5 checksum with the original. The reference is the checksum list saved with the book, then the copy on this computer, then archive.org's published checksums. Damaged or incomplete books are flagged with a **Repair** button, and the "On SD card" badge changes to "Check SD card" or "On SD card ✓".
 - **Star / Mark as read / Not interested** on any book. "Not interested" books are hidden while browsing. The "Show" filter switches between all, starred, unread, read and hidden books.
+- **Split long chapters** (Settings): when copying to an SD card, chapters longer than the chosen length (10–30 minutes) are cut into numbered parts, so players that forget their place have less to skip through. Splitting is done in plain JavaScript on MP3 frame boundaries, with no re-encoding and no ffmpeg. Each part gets its own title, album, artist and track tags.
+- **Download integrity**: every download is checked against archive.org's MD5 checksum and retried if it doesn't match.
 - **Built-in player** for books on the computer or the SD card: chapter list, back/forward 30 s, playback speed, and keyboard media keys. The listening position is saved every few seconds, and finishing the last chapter marks the book as read.
 
 ## How books are stored on the card
@@ -124,5 +128,7 @@ src/main/local.js       books saved on this computer (Music/Audiobook SD Loader)
 src/main/libstate.js    starred / read / not interested / listening position (library.json)
 src/main/media.js       abook:// protocol that streams MP3s to the player (with seeking)
 src/main/verify.js      "Check books": compares card files with expected sizes/MD5s
+src/main/mp3split.js    MP3 frame parser + splitter + minimal ID3v2 writer (no ffmpeg)
+src/renderer/shelves.js Home shelves, genre chips, Settings dialog
 src/renderer/           user interface (plain HTML/CSS/JS, no build step)
 ```

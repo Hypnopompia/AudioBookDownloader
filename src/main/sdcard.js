@@ -29,7 +29,9 @@ const fs = require('node:fs/promises');
 const fsSync = require('node:fs');
 const path = require('node:path');
 const { pipeline } = require('node:stream/promises');
-const { Transform } = require('node:stream');
+const { Transform, Readable } = require('node:stream');
+const crypto = require('node:crypto');
+const mp3split = require('./mp3split');
 const { naturalCompare, sanitizeName } = require('./util');
 const { run, space } = require('./drives');
 
@@ -293,7 +295,52 @@ function trackFileName(index, count, title) {
  * a time, flushing each to disk. Streams are used instead of fs.copyFile so
  * macOS doesn't add "._" resource-fork files to the card.
  */
-async function writeBook(mount, book, localFiles, { onBytes, signal } = {}) {
+/**
+ * Work out the files to write: one per chapter, or several "part" files for
+ * chapters longer than the split length.
+ * Returns [{ src, index, part, parts, title }].
+ */
+async function planOutputs(book, localFiles, splitSeconds) {
+  const plan = [];
+  for (let i = 0; i < localFiles.length; i++) {
+    const title = book.tracks[i]?.title || `Chapter ${i + 1}`;
+    let parts = 1;
+    if (splitSeconds) {
+      const { frames, duration } = mp3split.scanFrames(await fs.readFile(localFiles[i]));
+      parts = mp3split.partCount(duration, splitSeconds);
+      if (frames.length < parts * 10) parts = 1;
+    }
+    for (let p = 1; p <= parts; p++) {
+      plan.push({ src: localFiles[i], index: i, part: p, parts, title: parts > 1 ? `${title} (part ${p} of ${parts})` : title });
+    }
+  }
+  return plan;
+}
+
+/** Write a stream or buffer to `dest`, counting bytes and computing its MD5, then flush to disk. */
+async function writeOut(dest, source, { onBytes, signal }) {
+  const hash = crypto.createHash('md5');
+  const counter = new Transform({
+    transform(chunk, _enc, cb) {
+      hash.update(chunk);
+      onBytes?.(chunk.length);
+      cb(null, chunk);
+    },
+  });
+  const input = Buffer.isBuffer(source) ? Readable.from([source]) : source;
+  await pipeline(input, counter, fsSync.createWriteStream(dest), { signal });
+  const fh = await fs.open(dest, 'r+');
+  await fh.sync().finally(() => fh.close());
+  return hash.digest('hex');
+}
+
+/**
+ * Copy downloaded chapter files onto the card strictly in order, one file at
+ * a time, flushing each to disk. Streams are used instead of fs.copyFile so
+ * macOS doesn't add "._" resource-fork files to the card.
+ * With splitMinutes, long chapters become several numbered part files.
+ */
+async function writeBook(mount, book, localFiles, { onBytes, signal, splitMinutes = 0 } = {}) {
   if (!fsSync.existsSync(mount)) throw new Error('The SD card is not plugged in.');
   const base = sanitizeName(book.author ? `${book.title} - ${book.author}` : book.title, 70);
   const folder = await uniqueFolder(mount, base);
@@ -307,30 +354,38 @@ async function writeBook(mount, book, localFiles, { onBytes, signal } = {}) {
     title: book.title,
     author: book.author,
     format: book.format,
-    chapters: localFiles.length,
+    chapters: 0,
+    splitMinutes: splitMinutes || 0,
     addedAt: new Date().toISOString(),
     complete: false,
-    tracks: [], // { file, size, md5 } per chapter, used by "Check books"
+    tracks: [], // { file, size, md5 } per file, used by "Check books"
   };
 
   try {
-    for (let i = 0; i < localFiles.length; i++) {
+    const plan = await planOutputs(book, localFiles, (splitMinutes || 0) * 60);
+    meta.chapters = plan.length;
+    let pieces = null; // parts of the chapter currently being split
+    for (let k = 0; k < plan.length; k++) {
       signal?.throwIfAborted();
-      const file = trackFileName(i, localFiles.length, book.tracks[i]?.title);
+      const item = plan[k];
+      const file = trackFileName(k, plan.length, item.title);
       const dest = path.join(dir, file);
-      const counter = new Transform({
-        transform(chunk, _enc, cb) {
-          onBytes?.(chunk.length);
-          cb(null, chunk);
-        },
-      });
-      const out = fsSync.createWriteStream(dest);
-      await pipeline(fsSync.createReadStream(localFiles[i]), counter, out, { signal });
-      const fh = await fs.open(dest, 'r+');
-      await fh.sync().finally(() => fh.close());
-      const size = (await fs.stat(dest)).size;
-      if (size !== (await fs.stat(localFiles[i])).size) throw new Error(`Chapter ${i + 1} was not copied completely.`);
-      meta.tracks.push({ file, size, md5: book.tracks[i]?.md5 || null });
+      let md5;
+      if (item.parts === 1) {
+        md5 = await writeOut(dest, fsSync.createReadStream(item.src), { onBytes, signal });
+        const expected = book.tracks[item.index]?.md5;
+        if (expected && md5 !== expected) {
+          throw new Error(`The downloaded copy of chapter ${item.index + 1} is damaged. Delete the book from My library and try again.`);
+        }
+        if ((await fs.stat(dest)).size !== (await fs.stat(item.src)).size) throw new Error(`Chapter ${item.index + 1} was not copied completely.`);
+      } else {
+        if (item.part === 1) pieces = mp3split.splitBuffer(await fs.readFile(item.src), item.parts);
+        if (!pieces) throw new Error(`Chapter ${item.index + 1} could not be split into parts.`);
+        const tag = mp3split.buildId3({ title: item.title, album: book.title, artist: book.author, track: `${k + 1}/${plan.length}` });
+        md5 = await writeOut(dest, Buffer.concat([tag, pieces[item.part - 1]]), { onBytes, signal });
+        if (item.part === item.parts) pieces = null;
+      }
+      meta.tracks.push({ file, size: (await fs.stat(dest)).size, md5 });
     }
     // Written last so it never sits between chapters in the directory table.
     // A folder without it (e.g. card pulled mid-copy) shows as incomplete.

@@ -411,3 +411,40 @@ body:has(#player:not([hidden])) .toasts { bottom: 110px; }
 .tag.muted { background: var(--surface-2); color: var(--muted); }
 .row-problem { color: var(--danger); font-size: 14px; margin-top: 4px; }
 .dialog-foot .fit { max-width: 420px; text-align: right; }
+
+/* ---------------------------------------------------------------- genres & shelves */
+.genres { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; scrollbar-width: thin; }
+.chip {
+  display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+  border: 1px solid var(--border); background: var(--surface); border-radius: 999px;
+  padding: 5px 12px; font-size: 14px; cursor: pointer;
+}
+.chip:hover { border-color: var(--muted); }
+.chip.active { background: var(--accent); border-color: var(--accent); color: white; font-weight: 600; }
+.chip-count { font-size: 12px; opacity: .7; font-variant-numeric: tabular-nums; }
+.shelves:empty { display: none; }
+.shelves { padding: 18px 0 30px; display: flex; flex-direction: column; gap: 26px; }
+.shelf-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 0 28px 10px; }
+.shelf-head h2 { margin: 0; font: 600 21px var(--serif); }
+.shelf-hint { font: 400 14px var(--sans); color: var(--muted); margin-left: 10px; }
+.shelf-row {
+  display: grid; grid-auto-flow: column; grid-auto-columns: 158px; gap: 18px;
+  overflow-x: auto; padding: 4px 28px 10px; scroll-snap-type: x proximity; scrollbar-width: thin;
+}
+.shelf-row .book { scroll-snap-align: start; }
+.settings-tab { margin-top: 4px; color: var(--muted); }
+.settings select { width: 100%; }
+.settings h3:first-of-type { margin-top: 14px; }
+.mini-progress[hidden] + .settings-tab { margin-top: auto; }
+
+.genres { flex-wrap: wrap; overflow: visible; }
+.shelf-row { scroll-padding-inline: 28px; }
+.shelf-actions { display: flex; align-items: center; gap: 8px; }
+.shelf-actions .link { margin-right: 6px; }
+.shelf-arrow {
+  width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--border); background: var(--surface);
+  font-size: 20px; line-height: 1; cursor: pointer; color: var(--text); display: grid; place-items: center; padding-bottom: 2px;
+}
+.shelf-arrow:hover { border-color: var(--muted); }
+.genres { padding: 16px 28px 0; }
+.genres:empty { display: none; }
