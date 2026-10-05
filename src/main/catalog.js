@@ -15,14 +15,14 @@ const { naturalCompare, parseDuration, parseRuntime, parseTrack, first, htmlToTe
 const SOURCES = [
   {
     id: 'librivox',
-    name: 'LibriVox',
-    blurb: 'Public-domain books read aloud by volunteers.',
+    name: 'Audiobooks',
+    blurb: 'Classic public-domain books read aloud by LibriVox volunteers.',
     query: 'collection:librivoxaudio AND mediatype:audio',
   },
   {
     id: 'community',
-    name: 'Community Audiobooks',
-    blurb: 'Audiobooks and readings uploaded by Internet Archive members.',
+    name: 'More Audiobooks',
+    blurb: 'More books, stories and poems read aloud and shared by listeners. Recording quality varies.',
     query:
       'collection:audio_bookspoetry AND mediatype:audio AND -collection:librivoxaudio AND ' +
       '(format:"VBR MP3" OR format:"128Kbps MP3" OR format:"64Kbps MP3")',
@@ -61,8 +61,8 @@ const SOURCES = [
   },
   {
     id: '78s',
-    name: '78 RPM Records',
-    blurb: 'Songs from 1900s–1950s 78 rpm records, digitized by the Great 78 Project.',
+    name: 'Vintage Music',
+    blurb: 'Songs from the 1900s–1950s, saved from old 78 rpm records by the Great 78 Project.',
     query: 'collection:georgeblood AND mediatype:audio',
     genres: 'music',
     unit: 'track',
@@ -176,8 +176,11 @@ const GENERIC_TAGS = new Set([
 ]);
 
 let cacheDir = null;
-function init(dir) {
+let listSource = () => 'github'; // or 'archive': always read archive.org directly (Settings)
+
+function init(dir, { getListSource } = {}) {
   cacheDir = dir;
+  if (getListSource) listSource = getListSource;
   // remove caches written by older versions (they lack ratings and genres)
   fs.readdir(dir)
     .then((names) => names.filter((n) => /^catalog-/.test(n) && !n.startsWith(`catalog-v${CACHE_VERSION}-`)))
@@ -347,7 +350,7 @@ function refresh(id, onProgress) {
   const p = (async () => {
     const src = getSource(id);
     const cached = await readCache(id);
-    const prebuilt = await fetchPrebuilt(src, cached?.fetchedAt, onProgress);
+    const prebuilt = listSource() === 'archive' ? null : await fetchPrebuilt(src, cached?.fetchedAt, onProgress);
     if (prebuilt === 'unchanged') return cached;
     const data = prebuilt || { fetchedAt: Date.now(), items: await fetchAll(src, onProgress) };
     await fs.mkdir(cacheDir, { recursive: true });
@@ -391,6 +394,23 @@ async function prefetch({ onProgress, onDone } = {}) {
       console.error(`Background download of the ${src.id} list failed`, err);
     }
   }
+}
+
+const cacheFiles = async () => (await fs.readdir(cacheDir).catch(() => [])).filter((n) => /^catalog-.*\.json$/.test(n));
+
+/** The source lists saved on this computer, for Settings. */
+async function cacheInfo() {
+  const lists = [];
+  for (const name of await cacheFiles()) {
+    const st = await fs.stat(path.join(cacheDir, name)).catch(() => null);
+    if (st) lists.push({ bytes: st.size, savedAt: st.mtimeMs });
+  }
+  return { count: lists.length, bytes: lists.reduce((a, l) => a + l.bytes, 0), newest: Math.max(0, ...lists.map((l) => l.savedAt)) || null };
+}
+
+/** Delete the saved lists, so each source's list is downloaded again. */
+async function clearCache() {
+  await Promise.all((await cacheFiles()).map((n) => fs.rm(path.join(cacheDir, n), { force: true })));
 }
 
 // ---------------------------------------------------------------------------
@@ -533,6 +553,8 @@ module.exports = {
   load,
   refresh,
   prefetch,
+  cacheInfo,
+  clearCache,
   // for scripts/build-catalog.js
   fetchList: (id, onProgress) => fetchAll(getSource(id), onProgress),
   prebuiltBase,

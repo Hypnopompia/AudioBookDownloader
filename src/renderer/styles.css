@@ -200,7 +200,15 @@ select:focus, input:focus, button:focus-visible { outline: 2px solid var(--accen
   aspect-ratio: 1 / 1; width: 100%; border-radius: 10px; overflow: hidden; position: relative;
   background: var(--surface-2); box-shadow: var(--shadow); transition: transform .15s, box-shadow .15s;
 }
-.cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.cover img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
+/* a soft shimmer while the picture is on its way */
+.cover.loading::after {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(100deg, transparent 30%, rgb(255 255 255 / 18%) 50%, transparent 70%);
+  background-size: 250% 100%; animation: cover-shimmer 1.4s ease-in-out infinite;
+}
+@keyframes cover-shimmer { from { background-position: 120% 0; } to { background-position: -20% 0; } }
+@media (prefers-reduced-motion: reduce) { .cover.loading::after { animation: none; } }
 .cover-fallback {
   position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: flex-end;
   padding: 12px; color: white; font: 600 15px/1.2 var(--serif);
@@ -326,6 +334,11 @@ select:focus, input:focus, button:focus-visible { outline: 2px solid var(--accen
 .room-status.ok { background: var(--ok-soft); }
 
 /* ---------------------------------------------------------------- toasts */
+.tip {
+  position: fixed; inset: auto; margin: 0; max-width: 320px; padding: 6px 10px; border-radius: 8px;
+  background: var(--text); color: var(--bg); border: 0; font: 400 13px/1.35 var(--sans);
+  box-shadow: var(--shadow); pointer-events: none;
+}
 .toasts { position: fixed; bottom: 20px; right: 20px; display: flex; flex-direction: column; gap: 10px; z-index: 50; max-width: 420px; }
 .toast {
   background: var(--text); color: var(--bg); padding: 14px 18px; border-radius: 12px; box-shadow: var(--shadow);
@@ -511,6 +524,7 @@ body:has(#player:not([hidden])) .toasts { bottom: 110px; }
 .source.active { background: var(--accent); border-color: var(--accent); color: white; }
 .source.active .source-icon { background: rgb(255 255 255 / 20%); color: white; }
 /* list downloading: a progress line along the bottom of the tab */
+.list-cache { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 10px; font-size: 14px; }
 .source.fetching::after {
   content: ''; position: absolute; left: 16px; right: 16px; bottom: 2px; height: 2px; border-radius: 2px;
   background: linear-gradient(to right, currentColor var(--pct, 4%), color-mix(in srgb, currentColor 20%, transparent) var(--pct, 4%));

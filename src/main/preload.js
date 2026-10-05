@@ -24,6 +24,8 @@ contextBridge.exposeInMainWorld('api', {
   catalog: {
     sources: () => call('catalog:sources'),
     load: (sourceId, force) => call('catalog:load', sourceId, force),
+    info: () => call('catalog:info'),
+    clear: () => call('catalog:clear'),
     details: (identifier, quality) => call('book:details', identifier, quality),
     onProgress: (cb) => on('catalog:progress', cb),
     onUpdated: (cb) => on('catalog:updated', cb),

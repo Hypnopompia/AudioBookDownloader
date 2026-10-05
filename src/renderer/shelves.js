@@ -1,6 +1,6 @@
 'use strict';
 
-/* global api, state, el, $, bookCard, onCardIds, queuedIds, applyFilters, ratingScore, SORTERS, showError, toast, noun, isMusic */
+/* global api, state, el, $, bookCard, onCardIds, queuedIds, applyFilters, ratingScore, SORTERS, showError, toast, noun, isMusic, fmtBytes, fmtAgo, loadCatalog, sourceIndex: writable */
 
 // =========================================================================
 // Browse "Home": genre chips and shelves (rows of books).
@@ -143,12 +143,50 @@ function openSettings() {
       ], (v) => save({ quality: v })),
       el('p', { class: 'hint' }, 'You can also choose the quality for each book in its details.'),
 
+      el('h3', {}, 'Lists of books and shows'),
+      select(s.listSource || 'github', [
+        ['github', 'Faster (recommended): updated once a week'],
+        ['archive', 'Most up to date: can take several minutes'],
+      ], (v) => save({ listSource: v })),
+      el('p', { class: 'hint' },
+        '“Faster” is updated once a week. “Most up to date” includes the very newest additions, ' +
+        'but getting a big list can take several minutes.'),
+      el('div', { class: 'list-cache' },
+        el('span', { id: 'listCacheInfo', class: 'muted' }),
+        el('button', { class: 'btn btn-secondary btn-small', onclick: clearLists }, 'Get fresh lists')),
+
       el('h3', {}, 'About & updates'),
       el('div', { id: 'updateStatus', class: 'update-status' })),
     el('div', { class: 'dialog-foot' }, el('button', { class: 'btn btn-primary', onclick: () => dlg.close() }, 'Done'))
   );
   renderUpdateStatus();
+  renderListCacheInfo();
   dlg.showModal();
+}
+
+async function renderListCacheInfo() {
+  const box = $('#listCacheInfo');
+  if (!box) return;
+  const info = await api.catalog.info().catch(() => null);
+  box.textContent = !info || !info.count
+    ? 'No lists saved on this computer yet.'
+    : `${info.count} ${info.count === 1 ? 'list' : 'lists'} saved on this computer (${fmtBytes(info.bytes)}), updated ${fmtAgo(info.newest)}.`;
+}
+
+/** Delete the saved lists and download them again, from the place chosen above. */
+async function clearLists() {
+  try {
+    await api.catalog.clear();
+    state.catalogs = {};
+    state.fetching = {};
+    sourceIndex = null;
+    renderListCacheInfo();
+    toast('Getting fresh lists…');
+    if (state.sourceId !== 'podcasts') await loadCatalog(state.sourceId);
+    renderListCacheInfo();
+  } catch (err) {
+    showError(err);
+  }
 }
 
 // =========================================================================

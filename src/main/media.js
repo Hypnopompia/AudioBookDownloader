@@ -21,11 +21,8 @@ const SCHEME = 'abook';
 const byToken = new Map();
 const byPath = new Map();
 
-function registerScheme() {
-  protocol.registerSchemesAsPrivileged([
-    { scheme: SCHEME, privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true } },
-  ]);
-}
+// registered with the other custom schemes in main.js (Electron takes one list)
+const schemePrivileges = { scheme: SCHEME, privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true } };
 
 function urlFor(file) {
   let token = byPath.get(file);
@@ -119,4 +116,4 @@ async function open(source) {
   throw new Error('Unknown book location');
 }
 
-module.exports = { registerScheme, handleProtocol, open };
+module.exports = { schemePrivileges, handleProtocol, open };

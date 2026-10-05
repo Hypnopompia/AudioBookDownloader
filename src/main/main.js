@@ -1,6 +1,6 @@
 'use strict';
 
-const { app, BrowserWindow, ipcMain, dialog, shell, Notification, Menu, nativeImage } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, Notification, Menu, nativeImage, protocol } = require('electron');
 const path = require('node:path');
 const os = require('node:os');
 const fs = require('node:fs/promises');
@@ -9,6 +9,7 @@ const catalog = require('./catalog');
 const drives = require('./drives');
 const sdcard = require('./sdcard');
 const settings = require('./settings');
+const covers = require('./covers');
 const { Downloader } = require('./downloader');
 const local = require('./local');
 const libstate = require('./libstate');
@@ -28,7 +29,7 @@ function forgetCheck(mount, folder) {
   checks.get(mount)?.delete(folder);
 }
 
-media.registerScheme(); // must happen before the app is ready
+protocol.registerSchemesAsPrivileged([media.schemePrivileges, covers.schemePrivileges]); // before the app is ready
 
 const APP_NAME = 'ListenSync';
 const OLD_NAME = 'Audiobook SD Loader'; // name before v1.2
@@ -184,6 +185,11 @@ function handle(channel, fn) {
 }
 
 const catalogProgress = (p) => send('catalog:progress', p);
+const prefetchLists = () =>
+  catalog.prefetch({
+    onProgress: catalogProgress,
+    onDone: (sourceId, data) => send('catalog:updated', { sourceId, fetchedAt: data.fetchedAt }),
+  });
 
 function registerIpc() {
   handle('app:info', () => ({ platform: process.platform, version: app.getVersion() }));
@@ -201,6 +207,11 @@ function registerIpc() {
         .catch((err) => console.error('Background refresh failed', err));
     }
     return data;
+  });
+  handle('catalog:info', () => catalog.cacheInfo());
+  handle('catalog:clear', async () => {
+    await catalog.clearCache();
+    prefetchLists(); // download them again in the background
   });
   handle('book:details', (identifier, quality) => getDetails(identifier, quality));
   handle('podcasts:info', () => ({ directory: podcasts.usingPI() ? 'Podcast Index' : 'Apple Podcasts', categories: podcasts.categories() }));
@@ -453,12 +464,13 @@ app.whenReady().then(() => {
   setupMenuAndAbout();
   const userData = app.getPath('userData');
   settings.init(userData);
-  catalog.init(path.join(userData, 'cache'));
+  catalog.init(path.join(userData, 'cache'), { getListSource: () => settings.get().listSource });
   libstate.init(userData);
   local.init(PROFILE ? path.join(PROFILE, 'library') : migrateMusicFolder());
   local.migrateNames().then(() => local.cleanupPartial());
   fs.rm(path.join(os.tmpdir(), 'audiobook-sd-loader'), { recursive: true, force: true }).catch(() => {}); // v1.0 temp folder
   media.handleProtocol();
+  covers.init(path.join(userData, 'covers'));
   podcasts.useAnchorStore({
     get: (id) => libstate.all()[id]?.podAnchor || null,
     set: (id, anchor) => {
@@ -485,12 +497,7 @@ app.whenReady().then(() => {
   registerIpc();
   createWindow();
   // after the first screen has loaded, fetch the other sources' lists in the background
-  setTimeout(() => {
-    catalog.prefetch({
-      onProgress: catalogProgress,
-      onDone: (sourceId, data) => send('catalog:updated', { sourceId, fetchedAt: data.fetchedAt }),
-    });
-  }, 5000);
+  setTimeout(prefetchLists, 5000);
   pollDrives(true);
   updater.init((status) => send('update:changed', status));
   setInterval(() => pollDrives(false).catch(() => {}), process.platform === 'win32' ? 5000 : 3000);

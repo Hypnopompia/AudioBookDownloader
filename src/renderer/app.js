@@ -159,18 +159,15 @@ function coverEl(id, title, author) {
   const color = COVER_COLORS[[...String(id)].reduce((a, c) => a + c.charCodeAt(0), 0) % COVER_COLORS.length];
   const wrap = el('div', { class: 'cover', style: { background: color } });
   const fallback = el('div', { class: 'cover-fallback' }, title || '', author ? el('small', {}, author) : null);
-  const src = covers.get(id) || (id && !isPodcastId(id) ? `https://archive.org/services/img/${encodeURIComponent(id)}` : null);
+  const url = covers.get(id) || (id && !isPodcastId(id) ? `https://archive.org/services/img/${encodeURIComponent(id)}` : null);
+  const src = url && `cover://img/${encodeURIComponent(url)}`; // saved on disk by the main process (covers.js)
+  // The title shows until the picture arrives (or if it never does), then the picture covers it.
+  wrap.append(fallback);
   if (src) {
-    const img = el('img', {
-      src,
-      alt: '',
-      loading: 'lazy',
-      decoding: 'async',
-      onerror: () => img.replaceWith(fallback),
-    });
+    wrap.classList.add('loading');
+    const done = () => wrap.classList.remove('loading');
+    const img = el('img', { src, alt: '', loading: 'lazy', decoding: 'async', onload: done, onerror: () => { done(); img.remove(); } });
     wrap.append(img);
-  } else {
-    wrap.append(fallback);
   }
   return wrap;
 }
@@ -203,6 +200,64 @@ function toast(text, kind = '', action) {
 function showError(err) {
   toast(err?.message || String(err), 'error');
 }
+
+// ------------------------------------------------------------ tooltips
+// The built-in tooltips take over a second to appear (and sometimes don't), so
+// any element with a title gets this quicker one instead. It's a popover, so it
+// also shows above open dialogs.
+
+const TIP_DELAY_MS = 250;
+let tipEl = null;
+let tipFor = null;
+let tipTimer = null;
+
+/** Set an element's tooltip text, whether or not it has been shown yet. */
+function setTip(node, text) {
+  if (node.hasAttribute('data-tip')) node.dataset.tip = text;
+  else node.title = text;
+  if (tipFor === node && tipEl) tipEl.textContent = text;
+}
+
+function hideTip() {
+  clearTimeout(tipTimer);
+  tipFor = null;
+  if (tipEl?.matches(':popover-open')) tipEl.hidePopover();
+}
+
+function showTip(target) {
+  if (!target.isConnected || !target.dataset.tip) return;
+  if (!tipEl) tipEl = document.body.appendChild(el('div', { class: 'tip', role: 'tooltip', popover: 'manual' }));
+  tipEl.textContent = target.dataset.tip;
+  tipEl.showPopover();
+  const r = target.getBoundingClientRect();
+  const t = tipEl.getBoundingClientRect();
+  const left = Math.min(Math.max(8, r.left + r.width / 2 - t.width / 2), innerWidth - t.width - 8);
+  const below = r.bottom + 8;
+  tipEl.style.left = `${left}px`;
+  tipEl.style.top = `${below + t.height > innerHeight - 8 ? r.top - t.height - 8 : below}px`;
+}
+
+document.addEventListener('mouseover', (e) => {
+  const target = e.target.closest?.('[title], [data-tip]');
+  if (target === tipFor) return;
+  hideTip();
+  if (!target) return;
+  if (target.hasAttribute('title')) {
+    // move the text so the slow built-in tooltip doesn't also appear; keep it for screen readers
+    const text = target.title;
+    target.removeAttribute('title');
+    target.dataset.tip = text;
+    if (!target.hasAttribute('aria-label') && !target.textContent.trim()) target.setAttribute('aria-label', text);
+    else if (!target.hasAttribute('aria-description')) target.setAttribute('aria-description', text);
+  }
+  if (!target.dataset.tip) return;
+  tipFor = target;
+  tipTimer = setTimeout(() => showTip(target), TIP_DELAY_MS);
+});
+document.addEventListener('mousedown', hideTip, true);
+document.addEventListener('scroll', hideTip, true);
+document.addEventListener('keydown', hideTip, true);
+window.addEventListener('blur', hideTip);
 
 /** Promise-based confirm dialog. */
 function confirmBox({ title, text, ok = 'OK', danger = false, cancel = 'Cancel' }) {
@@ -303,12 +358,11 @@ function queuedIds() {
 // Icon and short description for each source card
 const SOURCE_STYLE = {
   librivox: {
-    tagline: 'Classic audiobooks',
+    tagline: 'Classic books, read aloud',
     path: 'M12 6.5C10.3 5 7.8 4.3 4 4.5v13c3.6-.2 6.1.5 8 2 1.9-1.5 4.4-2.2 8-2v-13c-3.8-.2-6.3.5-8 2zm-1 10.6c-1.7-.9-3.7-1.3-5-1.3V6.5c2 0 3.6.5 5 1.4zm7-1.3c-1.3 0-3.3.4-5 1.3V7.9c1.4-.9 3-1.4 5-1.4z',
   },
   community: {
-    label: 'Community', // full name is too long for the card
-    tagline: 'Member audiobooks',
+    tagline: 'Shared by listeners',
     path: 'M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zm0-6a2 2 0 1 1 0 4 2 2 0 0 1 0-4zm8 6a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM9 13c-3.3 0-6 1.8-6 4v2h12v-2c0-2.2-2.7-4-6-4zm-4 4c.3-.9 2-2 4-2s3.7 1.1 4 2zm12-4c-.6 0-1.2.1-1.7.2.9.9 1.7 2.1 1.7 3.8v2h4v-2c0-2.2-1.8-4-4-4z',
   },
   otr: {
@@ -326,8 +380,7 @@ const SOURCE_STYLE = {
     path: 'M4 4h16a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-6l1 3h2v2H7v-2h2l1-3H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zm0 2v9h16V6zm3 2h6v2H7zm0 3h10v2H7z',
   },
   '78s': {
-    label: '78 RPM',
-    tagline: 'Records, 1900s–50s',
+    tagline: 'Songs, 1900s–50s',
     path: 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 2a8 8 0 1 1 0 16 8 8 0 0 1 0-16zm0 2a6 6 0 0 0-6 6h2a4 4 0 0 1 4-4zm0 4a2 2 0 1 0 0 4 2 2 0 0 0 0-4z',
   },
   podcasts: {
@@ -336,10 +389,10 @@ const SOURCE_STYLE = {
   },
 };
 
-const SOURCE_SHORT = { librivox: 'LibriVox', community: 'Community', otr: 'Old Time Radio', live: 'Live Music', lectures: 'Lectures', '78s': '78 RPM', podcasts: 'Podcast' };
+const SOURCE_SHORT = { librivox: 'Audiobooks', community: 'More Audiobooks', otr: 'Old Time Radio', live: 'Live Music', lectures: 'Lectures', '78s': 'Vintage Music', podcasts: 'Podcast' };
 
 /** What one item of a source is called, and whether it's read or heard. */
-const SOURCE_NOUN = { otr: ['show', 'shows'], live: ['concert', 'concerts'], lectures: ['talk', 'talks'], '78s': ['record', 'records'] };
+const SOURCE_NOUN = { otr: ['show', 'shows'], live: ['concert', 'concerts'], lectures: ['talk', 'talks'], '78s': ['song', 'songs'] };
 const noun = (n = 2, id = state.sourceId) => (SOURCE_NOUN[id] || ['book', 'books'])[n === 1 ? 0 : 1];
 const isMusic = (id = state.sourceId) => !!state.sources.find((s) => s.id === id)?.music;
 let sourceIndex = null; // id -> source, built from loaded catalogs
@@ -405,9 +458,9 @@ function renderSources() {
       {
         class: `source ${s.id === state.sourceId ? 'active' : ''}`,
         role: 'tab',
-        dataset: { source: s.id },
+        dataset: { source: s.id, baseTip: s.blurb || SOURCE_STYLE[s.id]?.tagline || '' },
         'aria-selected': String(s.id === state.sourceId),
-        title: [SOURCE_STYLE[s.id]?.tagline, s.blurb].filter(Boolean).join('. '),
+        title: s.blurb || SOURCE_STYLE[s.id]?.tagline || '',
         onclick: () => selectSource(s.id),
       },
       el('span', { class: 'source-icon' }, sourceIcon(s.id)),
@@ -436,8 +489,8 @@ function showFetching(id, p) {
   if (!tab) return;
   tab.classList.toggle('fetching', !!p);
   tab.style.setProperty('--pct', p && p.total ? `${Math.max(4, Math.min(100, (p.loaded / p.total) * 100))}%` : '4%');
-  const base = tab.title.replace(/ \(getting the list.*\)$/, '');
-  tab.title = p ? `${base} (getting the list${p.total ? `: ${Math.round((p.loaded / p.total) * 100)}%` : ''})` : base;
+  const base = tab.dataset.baseTip;
+  setTip(tab, p ? `${base} (getting the list${p.total ? `: ${Math.round((p.loaded / p.total) * 100)}%` : ''})` : base);
 }
 
 async function selectSource(id) {

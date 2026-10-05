@@ -3,7 +3,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
-const DEFAULTS = { quality: 'standard', language: 'eng', source: 'librivox', sort: 'popular', show: 'all', speed: '1', splitMinutes: '0', lastMount: '' };
+const DEFAULTS = { quality: 'standard', language: 'eng', source: 'librivox', sort: 'popular', show: 'all', speed: '1', splitMinutes: '0', lastMount: '', listSource: 'github' };
 
 let file = null;
 let data = { ...DEFAULTS };
