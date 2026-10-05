@@ -46,3 +46,61 @@ test('two copies of a recording in the same format are listed once', () => {
   const high = catalog.buildTracks(files, 'high');
   assert.deepStrictEqual(high.tracks.map((t) => t.name), ['a.mp3', 'b.mp3']);
 });
+
+test('prebuilt lists are used when newer, verified, and skipped when stale', async (t) => {
+  const http = require('node:http');
+  const zlib = require('node:zlib');
+  const crypto = require('node:crypto');
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const path = require('node:path');
+
+  const items = [{ id: 'a', title: 'A', author: '', downloads: 1, genres: [] }];
+  const fetchedAt = Date.now() - 3600 * 1000;
+  const gz = zlib.gzipSync(JSON.stringify({ fetchedAt, items }));
+  let manifest;
+  const setManifest = (patch = {}) => {
+    manifest = { builtAt: Date.now(), sources: { otr: { fetchedAt, count: 1, bytes: gz.length, sha256: crypto.createHash('sha256').update(gz).digest('hex'), ...patch } } };
+  };
+  const server = http.createServer((req, res) => {
+    if (req.url.endsWith(catalog.manifestFile())) return res.end(JSON.stringify(manifest));
+    if (req.url.endsWith(catalog.prebuiltFile('otr'))) return res.end(gz);
+    res.statusCode = 404;
+    res.end();
+  });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  t.after(() => server.close());
+  process.env.LISTENSYNC_CATALOG_URL = `http://127.0.0.1:${server.address().port}`;
+  t.after(() => delete process.env.LISTENSYNC_CATALOG_URL);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ls-catalog-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  catalog.init(dir);
+
+  setManifest();
+  const first = await catalog.refresh('otr');
+  assert.strictEqual(first.fetchedAt, fetchedAt);
+  assert.deepStrictEqual(first.items, items);
+  assert.ok(fs.existsSync(path.join(dir, `catalog-v3-otr.json`)));
+
+  // the same list again: nothing new to download, the cache is kept
+  assert.strictEqual((await catalog.refresh('otr')).fetchedAt, fetchedAt);
+
+  // a file that doesn't match its checksum, or a list the weekly job stopped updating,
+  // isn't used (the app reads archive.org instead, which is stubbed out here)
+  const archive = [];
+  const realFetch = global.fetch;
+  global.fetch = async (url, opts) => {
+    if (String(url).includes('archive.org')) {
+      archive.push(String(url));
+      throw new Error('offline');
+    }
+    return realFetch(url, opts);
+  };
+  t.after(() => (global.fetch = realFetch));
+  fs.rmSync(path.join(dir, 'catalog-v3-otr.json'));
+  setManifest({ sha256: 'bad' });
+  await assert.rejects(catalog.refresh('otr'));
+  setManifest({ fetchedAt: Date.now() - 30 * 24 * 3600 * 1000 });
+  await assert.rejects(catalog.refresh('otr'));
+  assert.ok(archive.length >= 2);
+});

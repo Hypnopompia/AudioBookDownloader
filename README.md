@@ -47,7 +47,7 @@ MP3 player (for example headphones with a card slot), with everything in the rig
 - **Genre chips** with counts, search by title, author or subject, filter by language, and sort by popularity, rating, title, author, newest or length.
 - **Ratings** from archive.org listeners on covers and in book details. "Highest rated" weights by number of reviews, so a single 5-star review doesn't top the list. Only a minority of books have ratings.
 - See cover art, author, length, description, download size and the chapter list for each book.
-- **Caches the book list** on the computer, so it opens instantly after the first load. It refreshes in the background once a week, or when you click "Refresh list".
+- **Caches the book lists** on the computer, so they open instantly after the first load. Lists are downloaded ready-made from a weekly build (see [Catalog lists](#catalog-lists-weekly)), falling back to archive.org. After launch, every source's list loads in the background, and each refreshes once a week, or when you click "Refresh list".
 - **Detects drives automatically** (SD cards, USB sticks, players that show up as a drive) and shows how much space is used and free, plus roughly how many hours of listening still fit.
 - **Checks free space** before downloading. If a book won't fit, it offers to remove books from the card to make room.
 - **Shows download progress**, speed and time remaining for each book and for the whole list.
@@ -172,6 +172,27 @@ To publish a release:
 
 Builds from before v1.1.0 don't include the updater, so they need to be replaced by hand once.
 
+## Catalog lists (weekly)
+
+Reading a big list straight from archive.org takes minutes (the Live Music Archive alone has
+about 290,000 shows). So a GitHub Actions job ([catalog.yml](.github/workflows/catalog.yml)) runs
+every Monday, downloads every source's list with the app's own code
+([scripts/build-catalog.js](scripts/build-catalog.js)), and publishes them gzipped (about 26 MB in
+all) to the [`catalog`](https://github.com/Hypnopompia/ListenSync/releases/tag/catalog) release,
+with a manifest `catalog-v<N>.json` that gives each list's date, item count and SHA-256 checksum.
+
+The app downloads a source's list from there in seconds, and only when there's a newer one than it
+already has. It reads archive.org directly instead when the file can't be downloaded, doesn't match
+its checksum, or is more than 10 days old (the job has stopped running). If a list comes back much
+smaller than the week before, the job keeps last week's file. The `catalog` release is a
+pre-release and never "latest", so the updater and the download page ignore it.
+
+Run it by hand from the Actions tab (**Build catalog lists** → **Run workflow**), or locally with
+`node scripts/build-catalog.js <folder>`. `LISTENSYNC_CATALOG_URL` points the app and the script at
+another location, for testing. When the list format changes (`CACHE_VERSION` in
+[catalog.js](src/main/catalog.js)), the file names change with it, so older app versions keep
+reading their own files until those go stale.
+
 ## App icon
 
 The icon source is `build/icon.svg`. After editing it, regenerate the PNGs with:
@@ -212,7 +233,7 @@ SD_LOADER_ALLOW_DISK_IMAGES=1 npm start
 
 ```
 src/main/main.js        Electron main process, IPC, drive polling
-src/main/catalog.js     archive.org search + metadata, list cache, chapter selection
+src/main/catalog.js     sources, genres, list cache (prebuilt or from archive.org), chapter selection
 src/main/drives.js      SD card detection, free space, eject (macOS/Windows/Linux)
 src/main/sdcard.js      card listing, ordered writes, fix play order, delete
 src/main/downloader.js  download queue: parallel downloads, ordered copy, ETA
@@ -226,6 +247,7 @@ src/main/podcasts.js    podcast directory (Podcast Index / Apple), charts, episo
 src/main/secrets.js     API credentials from .env / the bundled secrets.json
 src/renderer/podcasts.js Podcasts browsing and "New episodes" check
 src/renderer/           user interface (plain HTML/CSS/JS, no build step)
+scripts/build-catalog.js weekly prebuilt lists (run by .github/workflows/catalog.yml)
 ```
 
 ## Credits and disclaimer

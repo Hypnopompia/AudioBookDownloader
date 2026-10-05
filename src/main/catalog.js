@@ -2,7 +2,10 @@
 
 const fs = require('node:fs/promises');
 const path = require('node:path');
-const { fetchJson } = require('./http');
+const crypto = require('node:crypto');
+const zlib = require('node:zlib');
+const { promisify } = require('node:util');
+const { fetchJson, UA } = require('./http');
 const { naturalCompare, parseDuration, parseRuntime, parseTrack, first, htmlToText } = require('./util');
 
 /**
@@ -280,14 +283,73 @@ async function readCache(id) {
   return null;
 }
 
+// ---------------------------------------------------------------------------
+// Prebuilt lists. A weekly GitHub Actions job (scripts/build-catalog.js)
+// publishes every source's list, gzipped, to the "catalog" release, so the
+// app downloads one file in seconds instead of reading archive.org for
+// minutes. The manifest says when each list was made and how to check it.
+// ---------------------------------------------------------------------------
+
+// LISTENSYNC_CATALOG_URL points the app (and the build script) somewhere else, for testing.
+const prebuiltBase = () => process.env.LISTENSYNC_CATALOG_URL || 'https://github.com/Hypnopompia/ListenSync/releases/download/catalog';
+const PREBUILT_MAX_AGE_MS = 10 * 24 * 3600 * 1000; // older than this, the weekly job has stopped: use archive.org
+const prebuiltFile = (id) => `catalog-v${CACHE_VERSION}-${id}.json.gz`;
+const manifestFile = () => `catalog-v${CACHE_VERSION}.json`;
+const gunzip = promisify(zlib.gunzip);
+
+async function fetchManifest() {
+  try {
+    const res = await fetch(`${prebuiltBase()}/${manifestFile()}`, { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(15000) });
+    return res.ok ? await res.json() : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The prebuilt list for a source when it's newer than `since`; 'unchanged' when
+ * it isn't; null when there's no usable prebuilt list (then read archive.org).
+ */
+async function fetchPrebuilt(src, since, onProgress) {
+  const entry = (await fetchManifest())?.sources?.[src.id];
+  if (!entry || !entry.fetchedAt || Date.now() - entry.fetchedAt > PREBUILT_MAX_AGE_MS) return null;
+  if (since && entry.fetchedAt <= since) return 'unchanged';
+  try {
+    const res = await fetch(`${prebuiltBase()}/${prebuiltFile(src.id)}`, { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(300000) });
+    if (!res.ok || !res.body) return null;
+    const chunks = [];
+    let bytes = 0;
+    for await (const chunk of res.body) {
+      chunks.push(chunk);
+      bytes += chunk.length;
+      // progress in items, estimated from the bytes so far
+      if (entry.bytes) onProgress?.({ sourceId: src.id, loaded: Math.round(entry.count * Math.min(1, bytes / entry.bytes)), total: entry.count });
+    }
+    const gz = Buffer.concat(chunks);
+    if (entry.sha256 && crypto.createHash('sha256').update(gz).digest('hex') !== entry.sha256) return null;
+    const data = JSON.parse(await gunzip(gz));
+    if (!Array.isArray(data.items) || !data.fetchedAt) return null;
+    return data;
+  } catch (err) {
+    console.error(`Prebuilt ${src.id} list could not be used`, err);
+    return null;
+  }
+}
+
 const inFlight = new Map();
 
-/** Download the full listing for a source and save it to the cache. */
+/**
+ * Get the newest full listing for a source and save it to the cache: the
+ * prebuilt list when there's a usable one, otherwise straight from archive.org.
+ */
 function refresh(id, onProgress) {
   if (inFlight.has(id)) return inFlight.get(id);
   const p = (async () => {
-    const items = await fetchAll(getSource(id), onProgress);
-    const data = { fetchedAt: Date.now(), items };
+    const src = getSource(id);
+    const cached = await readCache(id);
+    const prebuilt = await fetchPrebuilt(src, cached?.fetchedAt, onProgress);
+    if (prebuilt === 'unchanged') return cached;
+    const data = prebuilt || { fetchedAt: Date.now(), items: await fetchAll(src, onProgress) };
     await fs.mkdir(cacheDir, { recursive: true });
     const tmp = cachePath(id) + '.tmp';
     await fs.writeFile(tmp, JSON.stringify(data));
@@ -471,6 +533,11 @@ module.exports = {
   load,
   refresh,
   prefetch,
+  // for scripts/build-catalog.js
+  fetchList: (id, onProgress) => fetchAll(getSource(id), onProgress),
+  prebuiltBase,
+  prebuiltFile,
+  manifestFile,
   getDetails,
   buildTracks,
   sources: () => SOURCES.map(({ id, name, blurb, unit, genres }) => ({ id, name, blurb, unit: unit || 'chapter', music: genres === 'music' || genres === 'artists' })),

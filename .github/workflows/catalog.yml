@@ -1,0 +1,46 @@
+# Weekly: download every source's list from archive.org and publish it,
+# gzipped, to the "catalog" release, which the app downloads instead of
+# reading archive.org itself. See scripts/build-catalog.js.
+name: Build catalog lists
+
+on:
+  schedule:
+    - cron: '17 6 * * 1' # Mondays, 06:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write # upload to the release
+
+concurrency:
+  group: catalog
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # The script only uses Node built-ins, so no npm install (that would download Electron).
+      - name: Download the lists
+        run: node scripts/build-catalog.js catalog-out
+
+      - name: Publish to the catalog release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release view catalog >/dev/null 2>&1; then
+            # A pre-release that is never "latest", so app updates and the download page ignore it.
+            gh release create catalog --prerelease --latest=false --title "Catalog lists" \
+              --notes "Lists of every source, rebuilt weekly for the app to download. Not an app release."
+          fi
+          shopt -s nullglob
+          lists=(catalog-out/*.json.gz)
+          if [ ${#lists[@]} -gt 0 ]; then gh release upload catalog "${lists[@]}" --clobber; fi
+          # the manifest last, once the files it describes are in place
+          gh release upload catalog catalog-out/catalog-v*.json --clobber

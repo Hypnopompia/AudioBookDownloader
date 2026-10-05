@@ -32,7 +32,10 @@ if (existing && !existing.isDraft) {
 }
 if (!existing) {
   console.log(`Creating draft release ${tag}…`);
-  gh('release', 'create', tag, '-R', repo, '--draft', '--title', version, '--target', 'main', '--generate-notes');
+  // Start the notes at the previous app version, not the "catalog" lists release.
+  const [previous] = JSON.parse(gh('release', 'list', '-R', repo, '--exclude-drafts', '--exclude-pre-releases', '--limit', '1', '--json', 'tagName'));
+  const since = previous ? ['--notes-start-tag', previous.tagName] : [];
+  gh('release', 'create', tag, '-R', repo, '--draft', '--title', version, '--target', 'main', '--generate-notes', ...since);
 }
 
 run('node', ['scripts/write-secrets.js']); // bundle API keys from .env (never committed)
