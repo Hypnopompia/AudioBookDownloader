@@ -6,7 +6,7 @@ const crypto = require('node:crypto');
 const zlib = require('node:zlib');
 const { promisify } = require('node:util');
 const { fetchJson, UA } = require('./http');
-const { naturalCompare, parseDuration, parseRuntime, parseTrack, first, htmlToText } = require('./util');
+const { naturalCompare, parseDuration, parseRuntime, parseTrack, first, htmlToText, fixAllCaps, tidyTrackTitles, recordingKind } = require('./util');
 
 /**
  * Every source is an Internet Archive collection, so one search API and one
@@ -39,6 +39,7 @@ const SOURCES = [
     blurb: 'Concert recordings from bands that allow taping and sharing, from the Grateful Dead to today.',
     // "stream_only" shows can be played on archive.org but not downloaded
     query: 'mediatype:etree AND -collection:stream_only',
+    fields: 'source,taper', // to tell several recordings of the same show apart
     genres: 'artists',
     unit: 'track',
   },
@@ -55,6 +56,7 @@ const SOURCES = [
       '-subject:"freedom of speech" AND -subject:"text to speech" AND -subject:"radio program" AND ' +
       '-collection:audio_religion AND -collection:audio_islamic AND -collection:audio_sermons AND ' +
       '-collection:audio_bookspoetry AND -collection:librivoxaudio AND -collection:oldtimeradio AND ' +
+      '-collection:78rpm AND ' + // spoken-word records are in Vintage Music
       '(format:"VBR MP3" OR format:"128Kbps MP3" OR format:"64Kbps MP3")',
     genres: 'talks',
     unit: 'part',
@@ -70,7 +72,7 @@ const SOURCES = [
 ];
 
 const FIELDS = 'identifier,title,creator,downloads,publicdate,language,runtime,subject,avg_rating,num_reviews';
-const CACHE_VERSION = 3; // bump when the cached fields change
+const CACHE_VERSION = 4; // bump when the cached fields or the sources' queries change
 
 /**
  * Genres for browsing, matched against each book's subject tags (and title).
@@ -198,11 +200,20 @@ function cachePath(id) {
   return path.join(cacheDir, `catalog-v${CACHE_VERSION}-${id}.json`);
 }
 
+// Titles the Great 78 Project uses when a record's label can't be read: nothing to show or search for.
+const PLACEHOLDER_TITLE = /^\s*none\s+(legible|listed|given|visible)\s*$/i;
+
+/** A list item, or null for one that isn't worth listing. */
 function compact(it, src) {
-  const creators = Array.isArray(it.creator) ? it.creator : it.creator ? [it.creator] : [];
+  const creators = (Array.isArray(it.creator) ? it.creator : it.creator ? [it.creator] : []).map((c) => fixAllCaps(String(c).trim()));
   let subjects = Array.isArray(it.subject) ? it.subject : it.subject ? String(it.subject).split(';') : [];
   subjects = subjects.map((s) => String(s).trim()).filter(Boolean);
-  const title = String(first(it.title) || it.identifier).trim();
+  const rawTitle = String(first(it.title) || it.identifier).trim();
+  if (PLACEHOLDER_TITLE.test(rawTitle)) return null;
+  const title = fixAllCaps(rawTitle);
+  const kind = src.id === 'live' ? recordingKind(it.identifier, it.source) : '';
+  const rec = kind === 'Soundboard and audience mix' ? 'Mixed' : kind; // short, for cards
+  const taper = src.id === 'live' ? String(first(it.taper) || '').trim() : '';
   const genres =
     src.genres === 'artists' ? (creators[0] ? [artistKey(String(creators[0]).trim())] : []) : genresFor(subjects, title, src.genres || 'books');
   subjects = subjects.filter((s) => s.length < 40 && !GENERIC_TAGS.has(s.toLowerCase()));
@@ -221,6 +232,8 @@ function compact(it, src) {
     runtime: parseRuntime(it.runtime),
     tags: [...new Set(subjects)].slice(0, 8).join(', '),
     ...(src.genres === 'artists' ? { artist: String(creators[0] || '').trim() } : {}),
+    ...(rec ? { rec } : {}),
+    ...(taper && taper.length <= 40 && !/^(none|unknown|see .*|n\/a)$/i.test(taper) ? { taper } : {}),
   };
 }
 
@@ -241,10 +254,10 @@ const DATE_PARTS = [
 ];
 const PARALLEL = 4;
 
-function scrapeUrl(q, cursor) {
+function scrapeUrl(q, cursor, fields = FIELDS) {
   const u = new URL('https://archive.org/services/search/v1/scrape');
   u.searchParams.set('q', q);
-  u.searchParams.set('fields', FIELDS);
+  u.searchParams.set('fields', fields);
   u.searchParams.set('count', '2000'); // big pages are much slower per item
   if (cursor) u.searchParams.set('cursor', cursor);
   return u.toString();
@@ -252,9 +265,12 @@ function scrapeUrl(q, cursor) {
 
 async function fetchAll(src, onProgress) {
   const byId = new Map();
+  // only items with an MP3 the app can play and copy (some radio sets are ZIP files only)
+  const query = `(${src.query}) AND format:*MP3`;
+  const fields = src.fields ? `${FIELDS},${src.fields}` : FIELDS;
   // the whole list's size, for the progress bar (the scrape API's own total is wrong for small pages)
   const count = new URL('https://archive.org/advancedsearch.php');
-  count.searchParams.set('q', src.query);
+  count.searchParams.set('q', query);
   count.searchParams.set('rows', '0');
   count.searchParams.set('output', 'json');
   const total = (await fetchJson(count.toString(), { timeout: 120000 })).response?.numFound || 0;
@@ -262,8 +278,11 @@ async function fetchAll(src, onProgress) {
   const readPart = async (part) => {
     let cursor = null;
     do {
-      const data = await fetchJson(scrapeUrl(`(${src.query}) AND ${part}`, cursor), { timeout: 120000 });
-      for (const it of data.items || []) if (it.identifier) byId.set(it.identifier, compact(it, src));
+      const data = await fetchJson(scrapeUrl(`(${query}) AND ${part}`, cursor, fields), { timeout: 120000 });
+      for (const it of data.items || []) {
+        const item = it?.identifier && compact(it, src); // archive.org occasionally sends an empty entry
+        if (item) byId.set(it.identifier, item);
+      }
       onProgress?.({ sourceId: src.id, loaded: Math.min(byId.size, total), total });
       cursor = data.cursor || null;
     } while (cursor);
@@ -437,7 +456,7 @@ function chooseFormat(groups, quality) {
   return names.find((n) => groups.get(n).length >= maxCount) || names[0];
 }
 
-function buildTracks(files, quality) {
+function buildTracks(files, quality, creators = []) {
   const byName = new Map(files.map((f) => [f.name, f]));
   const groups = new Map();
   for (const f of files) {
@@ -480,18 +499,24 @@ function buildTracks(files, quality) {
   tracks.sort((a, b) => (useTrackNo ? a.trackNo - b.trackNo : naturalCompare(a.name, b.name)));
   // stable 1-based position in the full list; used to pick batches and name files
   tracks.forEach((t, i) => (t.number = i + 1));
+  const tidy = tidyTrackTitles(tracks.map((t) => t.title), creators);
+  tracks.forEach((t, i) => (t.title = tidy[i]));
   return { format, tracks };
 }
 
 const detailCache = new Map();
 
+/** "Audience" -> "Audience recording"; the mix already says what it is. */
+const recordingLabel = (kind) => (!kind || /mix$/.test(kind) ? kind : `${kind} recording`);
+
 /** Which of the app's sources an archive.org item belongs to. */
 function sourceFromItem(m) {
   const c = [].concat(m.collection || []).map((x) => String(x).toLowerCase());
   if (c.includes('librivoxaudio')) return 'librivox';
-  if (c.some((x) => /oldtimeradio|radioprograms|otrr/.test(x))) return 'otr';
+  // the same collections the sources' lists are built from
+  if (c.includes('oldtimeradio')) return 'otr';
   if (c.includes('etree') || m.mediatype === 'etree') return 'live';
-  if (c.includes('georgeblood')) return '78s';
+  if (c.includes('georgeblood') || c.includes('78rpm')) return '78s';
   if (c.includes('audio_bookspoetry')) return 'community';
   const subjects = [].concat(m.subject || []).join(';');
   if (/\b(lectures?|speech(es)?|talks|oratory)\b/i.test(subjects) || c.some((x) => /^(longnow|middleburydigitallectures|ucberkeleylectures)$/.test(x))) return 'lectures';
@@ -514,12 +539,12 @@ async function getDetails(identifier, quality = 'standard') {
   }
   const m = meta.metadata;
   const files = meta.files || [];
-  const { format, tracks } = buildTracks(files, quality);
+  const creators = (Array.isArray(m.creator) ? m.creator : m.creator ? [m.creator] : []).map((c) => String(c).trim());
+  const { format, tracks } = buildTracks(files, quality, creators);
   const sizes = {};
   for (const q of Object.keys(FORMAT_PREFS)) {
     sizes[q] = buildTracks(files, q).tracks.reduce((a, t) => a + t.size, 0);
   }
-  const creators = Array.isArray(m.creator) ? m.creator : m.creator ? [m.creator] : [];
   const subjects = (Array.isArray(m.subject) ? m.subject : String(m.subject || '').split(';'))
     .map((s) => String(s).trim())
     .filter((s) => s && !GENERIC_TAGS.has(s.toLowerCase()));
@@ -527,8 +552,8 @@ async function getDetails(identifier, quality = 'standard') {
   const source = sourceFromItem(m);
   return {
     identifier,
-    title: String(first(m.title) || identifier).trim(),
-    author: creators.join(', '),
+    title: fixAllCaps(String(first(m.title) || identifier).trim()),
+    author: creators.map(fixAllCaps).join(', '),
     description: htmlToText(m.description),
     language: String(first(m.language) || ''),
     date: String(first(m.date) || first(m.publicdate) || '').slice(0, 10),
@@ -547,6 +572,8 @@ async function getDetails(identifier, quality = 'standard') {
     // radio shows are collections of episodes rather than chapters of one story; music has tracks
     unit: source === 'otr' ? 'episode' : SOURCES.find((s) => s.id === source)?.unit || 'chapter',
     source,
+    // live music: "Soundboard recording · taped by …", to tell copies of one show apart
+    recording: source === 'live' ? [recordingLabel(recordingKind(identifier, m.source)), first(m.taper) && !/^(none|unknown|see .*)$/i.test(String(first(m.taper)).trim()) ? `taped by ${String(first(m.taper)).trim()}` : ''].filter(Boolean).join(' · ') : '',
   };
 }
 

@@ -43,9 +43,23 @@ function seeAll(genre, sort) {
   applyFilters();
 }
 
+/**
+ * The first SHELF_SIZE items in this order, one per title: a concert is often
+ * listed once per recording, and a shelf of the same show isn't much of a shelf.
+ * ("See all" and search still list every copy.)
+ */
 function topBy(items, sorter, filter) {
-  const list = filter ? items.filter(filter) : items.slice();
-  return list.sort(sorter).slice(0, SHELF_SIZE);
+  const list = (filter ? items.filter(filter) : items.slice()).sort(sorter);
+  const seen = new Set();
+  const out = [];
+  for (const it of list) {
+    const key = it.title.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(it);
+    if (out.length === SHELF_SIZE) break;
+  }
+  return out;
 }
 
 function renderShelves(items) {
@@ -141,7 +155,7 @@ function openSettings() {
         ['standard', 'Standard (recommended): smaller files, great for spoken word'],
         ['high', 'High: about twice the size'],
       ], (v) => save({ quality: v })),
-      el('p', { class: 'hint' }, 'You can also choose the quality for each title in its details.'),
+      el('p', { class: 'hint' }, 'Music always starts on High. You can also choose the quality for each title in its details.'),
 
       el('h3', {}, 'Lists of books, shows and music'),
       select(s.listSource || 'github', [

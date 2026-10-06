@@ -64,7 +64,7 @@ function initPlayer() {
   a.addEventListener('ended', () => nextTrack(true));
   a.addEventListener('error', () => {
     if (!player.book || !a.getAttribute('src')) return;
-    toast('This chapter could not be played. The file may be missing or damaged.', 'error');
+    toast(`This ${player.book.unit || 'chapter'} could not be played. The file may be missing or damaged.`, 'error');
   });
 
   // Keyboard media keys / headset buttons
@@ -123,7 +123,7 @@ async function playBook(source, { track = null } = {}) {
   $('#playerChapter').replaceChildren(
     ...book.tracks.map((t, i) => el('option', { value: String(i) }, `${i + 1}. ${t.title}`))
   );
-  if (time > 5) toast(`Continuing "${book.title}" from chapter ${index + 1} at ${fmtClock(time)}.`);
+  if (time > 5) toast(`Continuing "${book.title}" from ${book.unit || 'chapter'} ${index + 1} at ${fmtClock(time)}.`);
   loadTrack(index, time, true);
 }
 

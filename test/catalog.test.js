@@ -82,7 +82,7 @@ test('prebuilt lists are used when newer, verified, and skipped when stale', asy
   const first = await catalog.refresh('otr');
   assert.strictEqual(first.fetchedAt, fetchedAt);
   assert.deepStrictEqual(first.items, items);
-  assert.ok(fs.existsSync(path.join(dir, `catalog-v3-otr.json`)));
+  assert.ok(fs.existsSync(path.join(dir, catalog.manifestFile().replace(/\.json$/, '-otr.json'))));
 
   // the same list again: nothing new to download, the cache is kept
   assert.strictEqual((await catalog.refresh('otr')).fetchedAt, fetchedAt);
@@ -99,7 +99,7 @@ test('prebuilt lists are used when newer, verified, and skipped when stale', asy
     return realFetch(url, opts);
   };
   t.after(() => (global.fetch = realFetch));
-  fs.rmSync(path.join(dir, 'catalog-v3-otr.json'));
+  fs.rmSync(path.join(dir, catalog.manifestFile().replace(/\.json$/, '-otr.json')));
   setManifest({ sha256: 'bad' });
   await assert.rejects(catalog.refresh('otr'));
   setManifest({ fetchedAt: Date.now() - 30 * 24 * 3600 * 1000 });

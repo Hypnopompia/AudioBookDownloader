@@ -657,7 +657,7 @@ function decorateCover(cover, id, onCard, queued) {
   const cb = onCard.has(id) ? cardBook(id) : null;
   if (state.podNew?.has(id)) badge = el('span', { class: 'badge new' }, 'New episodes'); // followed podcast with new episodes
   else if (cb && (!cb.complete || cb.check?.status === 'problem')) badge = el('span', { class: 'badge warn', title: 'Open "On the drive" to repair it' }, 'Check drive');
-  else if (cb && cb.check?.status === 'ok') badge = el('span', { class: 'badge', title: 'Checked: every chapter matches the original' }, 'On drive ✓');
+  else if (cb && cb.check?.status === 'ok') badge = el('span', { class: 'badge', title: `Checked: every ${cb.unit || 'chapter'} matches the original` }, 'On drive ✓');
   else if (cb) badge = el('span', { class: 'badge' }, 'On drive');
   else if (queued.has(id)) badge = el('span', { class: 'badge queued' }, 'Downloading');
   else if (localBook(id)) badge = el('span', { class: 'badge local' }, 'On computer');
@@ -682,7 +682,8 @@ const fmtRating = (rating) => (rating ? `★ ${rating.toFixed(1)}` : '');
 function bookCard(it, onCard, queued) {
   const cover = coverEl(it.id, it.title, it.author);
   decorateCover(cover, it.id, onCard, queued);
-  const meta = it.metaText || [fmtRating(it.rating), fmtRuntime(it.runtime), state.lang ? '' : langName(it.lk)].filter(Boolean).join(' · ');
+  // concerts: what kind of recording and who taped it, since a show is often listed several times
+  const meta = it.metaText || [fmtRating(it.rating), fmtRuntime(it.runtime), it.rec, it.taper, state.lang ? '' : langName(it.lk)].filter(Boolean).join(' · ');
   return el(
     'button',
     { class: 'book', dataset: { id: it.id }, onclick: () => openBook(it.id, it) },
@@ -727,11 +728,12 @@ async function openBook(id, item) {
         el('div', {},
           el('h2', {}, item?.title || 'Loading…'),
           el('div', { class: 'detail-author' }, item?.author || ''),
-          el('div', { class: 'state', style: { padding: '30px 0' } }, el('div', { class: 'progress indeterminate' }, el('span')), 'Getting chapter list…'))))
+          el('div', { class: 'state', style: { padding: '30px 0' } }, el('div', { class: 'progress indeterminate' }, el('span')), `Getting ${unitForSource(sourceOf(id, item?.source) || state.sourceId)} list…`))))
   );
   if (!dlg.open) dlg.showModal();
   try {
-    const details = await api.catalog.details(id, state.settings.quality);
+    // Standard quality is made for speech; music starts on High (it can still be changed per title)
+    const details = await api.catalog.details(id, isMusic(sourceOf(id, item?.source) || state.sourceId) ? 'high' : state.settings.quality);
     if (req !== bookReq || !dlg.open) return;
     renderBook(details);
   } catch (err) {
@@ -799,6 +801,8 @@ function refreshBookDialog() {
 // ------------------------------------------------------------ chapters / episodes
 
 const unitWord = (d, n = 2) => (d.unit || 'chapter') + (n === 1 ? '' : 's');
+/** What a source's parts are called, before an item's details have loaded. */
+const unitForSource = (src) => (src === 'podcasts' || src === 'otr' ? 'episode' : state.sources.find((s) => s.id === src)?.unit || 'chapter');
 const UnitTitle = (d) => unitWord(d).replace(/^./, (c) => c.toUpperCase());
 
 /** Track numbers of a book that are on the plugged-in card (across all its folders). */
@@ -910,6 +914,7 @@ function renderBook(d) {
 
   const facts = el('dl', { class: 'facts' });
   const addFact = (k, v) => v && facts.append(el('dt', {}, k), el('dd', {}, v));
+  if (d.recording) addFact('Recording', d.recording);
   if (d.rating) addFact('Rating', `${'★'.repeat(Math.round(d.rating))}${'☆'.repeat(5 - Math.round(d.rating))}  ${d.rating.toFixed(1)} (${d.reviews} ${d.reviews === 1 ? 'review' : 'reviews'} on archive.org)`);
   addFact('Length', fmtRuntime(d.runtime));
   addFact(UnitTitle(d), total ? total.toLocaleString() : 'No MP3 files');
@@ -928,8 +933,11 @@ function renderBook(d) {
     quality = el('div', {},
       el('h3', {}, 'Sound quality'),
       el('div', { class: 'quality' },
-        opt('standard', `Standard — ${fmtBytes(d.sizes.standard)}`, 'Recommended. Sounds great for spoken word and fits twice as many books.'),
-        opt('high', `High — ${fmtBytes(d.sizes.high)}`, 'Bigger files. Only needed for music or very good headphones.')));
+        ...(isMusic(d.source)
+          ? [opt('standard', `Standard — ${fmtBytes(d.sizes.standard)}`, 'Smaller files, but music loses some of its sound.'),
+            opt('high', `High — ${fmtBytes(d.sizes.high)}`, 'Recommended for music.')]
+          : [opt('standard', `Standard — ${fmtBytes(d.sizes.standard)}`, 'Recommended. Sounds great for spoken word and fits about twice as much.'),
+            opt('high', `High — ${fmtBytes(d.sizes.high)}`, 'Bigger files. Only needed for very good headphones.')])));
   }
 
   // ---- chapter / episode list
@@ -1406,7 +1414,7 @@ function renderCardView() {
       el('p', {}, `${c.books.length} ${c.books.length === 1 ? 'title' : 'titles'} on "${drive.label}" · ${fmtBytes(c.free)} free`)),
     el('div', { class: 'head-actions' },
       c.books.some((b) => b.managed)
-        ? el('button', { class: 'btn btn-secondary', disabled: !!state.verifying, title: 'Read every chapter back from the drive and make sure it matches the original', onclick: () => checkBooks() }, icon('check'), 'Check files')
+        ? el('button', { class: 'btn btn-secondary', disabled: !!state.verifying, title: 'Read every file back from the drive and make sure it matches the original', onclick: () => checkBooks() }, icon('check'), 'Check files')
         : null,
       el('button', { class: 'btn btn-secondary', onclick: () => api.card.reveal(state.mount).catch(showError) }, icon('folder'), 'Open drive in file browser'),
       el('button', { class: 'btn btn-primary', onclick: () => showView('browse') }, icon('plus'), 'Discover more')));
@@ -1465,8 +1473,8 @@ function renderCardView() {
   parts.push(
     el('details', { class: 'explain' },
       el('summary', {}, 'How is everything arranged on the drive?'),
-      el('p', {}, 'Each audiobook gets its own folder named after the book, and every chapter is numbered (001, 002, 003…) so it plays in the right order.'),
-      el('p', {}, 'Many headphones and MP3 players ignore file names and play files in the order they were saved to the drive. This app always copies chapters one at a time, in order. If you remove titles or copy files by hand, use "Fix play order" to put everything back in order. Titles are listed here in the order the headphones will see them.'))
+      el('p', {}, 'Everything gets its own folder named after its title, and every file in it is numbered (001, 002, 003…) so it plays in the right order.'),
+      el('p', {}, 'Many headphones and MP3 players ignore file names and play files in the order they were saved to the drive. This app always copies files one at a time, in order. If you remove titles or copy files by hand, use "Fix play order" to put everything back in order. Titles are listed here in the order the headphones will see them.'))
   );
   root.replaceChildren(...parts.filter(Boolean));
 }
@@ -1485,12 +1493,12 @@ function bookRow(b, i) {
         libEntry(b.identifier || `folder:${b.folder}`).status === 'read' ? el('span', { class: 'tag ok' }, 'Read') : null,
         !b.inOrder ? el('span', { class: 'tag warn' }, 'Out of order') : null,
         !b.complete ? el('span', { class: 'tag error' }, 'Incomplete') : null,
-        b.check?.status === 'ok' ? el('span', { class: 'tag ok', title: `Every chapter matches (checked against ${b.check.checkedFrom})` }, '✓ Checked') : null,
+        b.check?.status === 'ok' ? el('span', { class: 'tag ok', title: `Every ${unit} matches (checked against ${b.check.checkedFrom})` }, '✓ Checked') : null,
         b.check?.status === 'problem' ? el('span', { class: 'tag error' }, 'Problem') : null,
         b.check?.status === 'unknown' ? el('span', { class: 'tag muted', title: b.check.problems.join(' ') }, 'Can’t check') : null), b.identifier, b),
       el('div', { class: 'row-sub' }, sourceTag(b.identifier, b.source), sub),
       b.check?.status === 'problem' ? el('div', { class: 'row-problem' }, b.check.problems.slice(0, 3).join(' ')) : null,
-      !b.complete && b.expectedChapters ? el('div', { class: 'row-problem' }, `Only ${b.chapters} of ${b.expectedChapters} chapters are on the drive.`) : null),
+      !b.complete && b.expectedChapters ? el('div', { class: 'row-problem' }, `Only ${b.chapters} of ${b.expectedChapters} ${unit}s are on the drive.`) : null),
     el('div', { class: 'row-actions' },
       b.identifier && (!b.complete || b.check?.status === 'problem')
         ? el('button', { class: 'btn btn-primary btn-small', onclick: () => repairBook(b) }, icon('retry'), 'Repair')
@@ -1512,7 +1520,7 @@ async function checkBooks() {
     const bad = results.filter((r) => r.status === 'problem').length;
     const unknown = results.filter((r) => r.status === 'unknown').length;
     if (bad) toast(`${bad} ${bad === 1 ? 'title has' : 'titles have'} a problem. Press "Repair" to fix ${bad === 1 ? 'it' : 'them'}.`, 'error');
-    else toast(`All ${results.length - unknown} titles checked: every chapter matches the original.${unknown ? ` (${unknown} couldn’t be checked.)` : ''}`, 'success');
+    else toast(`All ${results.length - unknown} titles checked: every file matches the original.${unknown ? ` (${unknown} couldn’t be checked.)` : ''}`, 'success');
   } catch (err) {
     showError(err);
   } finally {

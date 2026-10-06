@@ -75,3 +75,33 @@ test('buildTracks never picks an incomplete format set', () => {
   const partial = files.filter((f) => f.name !== 'book_02_x_64kb.mp3');
   assert.strictEqual(buildTracks(partial, 'standard').format, 'VBR MP3');
 });
+
+const { fixAllCaps, tidyTrackTitles, recordingKind } = require('../src/main/util');
+
+test('all-capital titles get normal capitals; other text is left alone', () => {
+  assert.strictEqual(fixAllCaps('LILY OF LAGUNA'), 'Lily of Laguna');
+  assert.strictEqual(fixAllCaps("SONGS THEY DON'T SING IN SCHOOL"), "Songs They Don't Sing in School");
+  assert.strictEqual(fixAllCaps('PART II OF THE STORY'), 'Part II of the Story');
+  assert.strictEqual(fixAllCaps('Mr. Sandman'), 'Mr. Sandman');
+  assert.strictEqual(fixAllCaps('USA'), 'USA'); // too short to be sure it's shouting
+});
+
+test('track titles made from file names are tidied', () => {
+  assert.deepStrictEqual(tidyTrackTitles(['wonderland_ch_01', 'wonderland_ch_02']), ['Chapter 1', 'Chapter 2']);
+  assert.deepStrictEqual(tidyTrackTitles(['00 - Preface', '01 - A Snow-Drift']), ['Preface', 'A Snow-Drift']);
+  assert.deepStrictEqual(
+    tidyTrackTitles(["01 - MY MAN O' WAR - BETTY THORNTON - Frank Signorelli", "02 - MAMA'S WELL HAS DONE GONE DRY - BETTY THORNTON"], ['BETTY THORNTON', 'Frank Signorelli']),
+    ["My Man O' War", "Mama's Well Has Done Gone Dry"]
+  );
+  // numbers that are part of the title, or only on some tracks, stay
+  assert.deepStrictEqual(tidyTrackTitles(['1984', 'Part 2']), ['1984', 'Part 2']);
+  assert.deepStrictEqual(tidyTrackTitles(['01 - Intro', 'Encore']), ['01 - Intro', 'Encore']);
+});
+
+test('live recordings are labeled by how they were taped', () => {
+  assert.strictEqual(recordingKind('gd77-05-08.maizner.hicks.5002.sbeok.shnf', 'Audience - Sony ECM-990'), 'Audience');
+  assert.strictEqual(recordingKind('gd1977-05-08.148737.SBD.Betty.Anon.Noel.t-flac2448', ''), 'Soundboard');
+  assert.strictEqual(recordingKind('gd1977-05-08.mtx.dan.29511.flac16', ''), 'Soundboard and audience mix');
+  assert.strictEqual(recordingKind('phish1999-12-31.fm.flac', ''), 'Broadcast');
+  assert.strictEqual(recordingKind('oar2006-01-14.mix.flac16', ''), '');
+});
