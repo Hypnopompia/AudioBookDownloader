@@ -610,6 +610,9 @@ function applyFilters() {
   if (lang) items = items.filter((it) => it.lk === lang);
   if (terms.length) items = items.filter((it) => terms.every((t) => it.hay.includes(t)));
   const show = state.show;
+  // Items kept off the shelves (see src/main/shelf-rules.js) only show up when searched for,
+  // or in the person's own Starred / heard / hidden lists.
+  if (!terms.length && show === 'all') items = items.filter((it) => !it.offShelf);
   items = items.filter((it) => {
     const e = state.lib[it.id];
     if (show === 'starred') return !!e?.starred;

@@ -49,6 +49,7 @@ MP3 player (for example headphones with a card slot), with everything in the rig
   listed under Starred, with a **New episodes** badge when it publishes something new. Episode numbers
   stay stable even for feeds that only list their newest episodes.
 - **Genre chips** with counts, search by title, author or subject, filter by language, and sort by popularity, rating, title, author, newest or length.
+- **Nothing is removed, but not everything is featured.** Recordings with slurs in their titles, material made by hate movements and terrorist groups, minstrel-show and racial-caricature entertainment, and sexually explicit titles aren't shown while browsing. Search always finds them. The rules are in [shelf-rules.js](src/main/shelf-rules.js); when one catches something it shouldn't, the rule is changed rather than single items.
 - **Ratings** from archive.org listeners on covers and in book details. "Highest rated" weights by number of reviews, so a single 5-star review doesn't top the list. Only a minority of books have ratings.
 - See cover art, author, length, description, download size and the chapter list for each book.
 - **Caches the book lists** on the computer, so they open instantly after the first load. Lists are downloaded ready-made from a weekly build (see [Catalog lists](#catalog-lists-weekly)), falling back to archive.org. After launch, every source's list loads in the background, and each refreshes once a week, or when you click "Refresh list".

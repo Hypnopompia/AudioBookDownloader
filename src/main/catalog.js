@@ -6,6 +6,7 @@ const crypto = require('node:crypto');
 const zlib = require('node:zlib');
 const { promisify } = require('node:util');
 const { fetchJson, UA } = require('./http');
+const { shelfRule } = require('./shelf-rules');
 const { naturalCompare, parseDuration, parseRuntime, parseTrack, first, htmlToText, fixAllCaps, tidyTrackTitles, recordingKind } = require('./util');
 
 /**
@@ -72,7 +73,7 @@ const SOURCES = [
 ];
 
 const FIELDS = 'identifier,title,creator,downloads,publicdate,language,runtime,subject,avg_rating,num_reviews';
-const CACHE_VERSION = 4; // bump when the cached fields or the sources' queries change
+const CACHE_VERSION = 5; // bump when the cached fields or the sources' queries change
 
 /**
  * Genres for browsing, matched against each book's subject tags (and title).
@@ -203,6 +204,9 @@ function cachePath(id) {
 // Titles the Great 78 Project uses when a record's label can't be read: nothing to show or search for.
 const PLACEHOLDER_TITLE = /^\s*none\s+(legible|listed|given|visible)\s*$/i;
 
+/** Which rule in shelf-rules.js keeps an item off the shelves while browsing (0 for none). */
+const offShelf = (title, creators, src) => shelfRule({ title, author: creators.join(', ') }, src.id);
+
 /** A list item, or null for one that isn't worth listing. */
 function compact(it, src) {
   const creators = (Array.isArray(it.creator) ? it.creator : it.creator ? [it.creator] : []).map((c) => fixAllCaps(String(c).trim()));
@@ -210,7 +214,11 @@ function compact(it, src) {
   subjects = subjects.map((s) => String(s).trim()).filter(Boolean);
   const rawTitle = String(first(it.title) || it.identifier).trim();
   if (PLACEHOLDER_TITLE.test(rawTitle)) return null;
+  // In French, "lecture" means "reading": French items tagged only that are stories, not talks.
+  if (src.id === 'lectures' && /^(fre|fra|french|fran[cç]ais)$/i.test(String(first(it.language) || '').trim()) &&
+      !subjects.some((s) => /\b(speech(es)?|talks?|oratory|conf[eé]rences?|discours|cours)\b/i.test(s))) return null;
   const title = fixAllCaps(rawTitle);
+  const rule = offShelf(title, creators, src);
   const kind = src.id === 'live' ? recordingKind(it.identifier, it.source) : '';
   const rec = kind === 'Soundboard and audience mix' ? 'Mixed' : kind; // short, for cards
   const taper = src.id === 'live' ? String(first(it.taper) || '').trim() : '';
@@ -233,6 +241,7 @@ function compact(it, src) {
     tags: [...new Set(subjects)].slice(0, 8).join(', '),
     ...(src.genres === 'artists' ? { artist: String(creators[0] || '').trim() } : {}),
     ...(rec ? { rec } : {}),
+    ...(rule ? { offShelf: rule } : {}),
     ...(taper && taper.length <= 40 && !/^(none|unknown|see .*|n\/a)$/i.test(taper) ? { taper } : {}),
   };
 }

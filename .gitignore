@@ -4,3 +4,7 @@ dist/
 .env
 src/main/secrets.json
 catalog-out/
+
+# private review notes (quote offensive titles)
+keep-off-shelves-review.md
+keep-off-shelves-summary.md

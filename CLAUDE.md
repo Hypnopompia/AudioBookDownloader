@@ -34,6 +34,11 @@ caches or file formats in settings, buttons or messages unless there's no other 
 
 ## Source lists
 
+- Items matching `src/main/shelf-rules.js` (slurs in titles, hate-movement material, minstrel and
+  racial caricature, explicit titles) are kept off the shelves while browsing but still found by
+  search. These rules were agreed with the maintainer; change a rule when it misfires, never add
+  per-item exceptions, and don't widen them to matters of taste.
+
 - Lists come from a weekly prebuilt catalog (`.github/workflows/catalog.yml`), falling back to
   archive.org. Bump `CACHE_VERSION` in `src/main/catalog.js` whenever a source's query or the
   cached item fields change; the file names include it, so older app versions keep their own.
