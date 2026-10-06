@@ -447,18 +447,20 @@ function buildTracks(files, quality) {
     groups.get(fmt).push(f);
   }
   if (!groups.size) return { format: null, tracks: [] };
-  // Some items hold two copies of each recording in one format (an older
+  // Some items hold two copies of each recording in one format (an older, smaller
   // "x.mp3" and a newer "x_vbr.mp3" made from the same original). Keep one per
-  // original, preferring the copy with a title, then the shorter file name.
+  // original: the bigger (better) copy, with the title from whichever copy has one.
   for (const [fmt, list] of groups) {
     const byOriginal = new Map();
     for (const f of list) {
       const key = f.original || f.name;
-      const cur = byOriginal.get(key);
-      const better = !cur || (!!f.title !== !!cur.title ? !!f.title : f.name.length < cur.name.length);
-      if (better) byOriginal.set(key, f);
+      byOriginal.set(key, [...(byOriginal.get(key) || []), f]);
     }
-    groups.set(fmt, [...byOriginal.values()]);
+    groups.set(fmt, [...byOriginal.values()].map((copies) => {
+      const best = copies.reduce((a, b) => ((Number(b.size) || 0) > (Number(a.size) || 0) ? b : a));
+      const title = best.title ?? copies.find((c) => c.title)?.title;
+      return title === undefined ? best : { ...best, title };
+    }));
   }
   const format = chooseFormat(groups, quality);
   let tracks = groups.get(format).map((f) => {

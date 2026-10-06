@@ -43,8 +43,10 @@ test('two copies of a recording in the same format are listed once', () => {
   const std = catalog.buildTracks(files, 'standard');
   assert.strictEqual(std.format, '64Kbps MP3'); // no longer outnumbered by the doubled set
   assert.deepStrictEqual(std.tracks.map((t) => t.title), ['Speech A', 'Speech B']);
+  // the bigger, better copy, keeping the title from its smaller twin
   const high = catalog.buildTracks(files, 'high');
-  assert.deepStrictEqual(high.tracks.map((t) => t.name), ['a.mp3', 'b.mp3']);
+  assert.deepStrictEqual(high.tracks.map((t) => [t.name, t.title]), [['a_vbr.mp3', 'Speech A'], ['b_vbr.mp3', 'Speech B']]);
+  assert.ok(high.tracks.reduce((n, t) => n + t.size, 0) > std.tracks.reduce((n, t) => n + t.size, 0));
 });
 
 test('prebuilt lists are used when newer, verified, and skipped when stale', async (t) => {
