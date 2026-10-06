@@ -49,7 +49,9 @@ const RULES = [
     rule: 2,
     // the movements' own material, by title
     words: [
-      ['hitler on the', ALL], ['speeches from hitler', ALL], ['hitler speech', ALL], ['hitler speeches', ALL], ['hitlers speech', ALL],
+      // apostrophes are dropped before matching, so "Hitler's" reads "hitlers"
+      ['hitler on the', ALL], ['speeches from hitler', ALL], ['speeches from hitlers', ALL], ['hitler speech', ALL], ['hitler speeches', ALL],
+      ['hitlers speech', ALL], ['hitlers speeches', ALL],
       ['goebbels', ALL], ['sportpalastrede', ALL], ['horst wessel', ALL], ['third reich speeches', ALL], ['mein kampf', ALL],
       ['protocols of the elders', ALL], ['ku klux', ALL], ['awlaki', ALL], ['degrelle', ALL], ['al jihad', ALL],
     ],

@@ -28,6 +28,7 @@ test('innocent look-alikes stay on the shelves', () => {
 
 test('hate movements, caricature and explicit titles', () => {
   assert.strictEqual(rule('Hitler on the Jews', 'Adolf Hitler', 'lectures'), 2);
+  assert.strictEqual(rule("Speeches from Hitler's Germany", '', 'lectures'), 2);
   assert.strictEqual(rule('Any title at all', 'Thomas Dalton', 'lectures'), 2);
   assert.strictEqual(rule('The Lives of the Prophets by Anwar Al-Awlaki', '', 'lectures'), 2);
   assert.strictEqual(rule("Amos 'N' Andy", 'Freeman Gosden'), 3);
