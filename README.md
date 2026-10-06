@@ -133,21 +133,16 @@ Output goes to `dist/`:
 | `ListenSync Setup <version>.exe` | Windows 10/11 installer |
 | `ListenSync <version>.exe` | Windows portable (no install needed) |
 
-### Opening an unsigned build
+### Opening the app the first time
 
-The builds are not signed with an Apple Developer ID or a Windows code-signing
-certificate, so each system shows a warning the first time:
-
-- **macOS 15 (Sequoia) and later**: open the app once and dismiss the warning, then go to
-  **System Settings → Privacy & Security**, scroll down, and click **Open Anyway** next to
-  "ListenSync". Confirm, and from then on it opens normally.
-  (On macOS 14 and earlier you can instead right-click the app → **Open** → **Open**.)
-- **Windows**: on the blue "Windows protected your PC" screen, click **More info**, then **Run anyway**.
-
-To remove these warnings, sign the macOS build with a Developer ID certificate and
-notarize it (Apple Developer Program), and sign the Windows build with a code-signing
-certificate. electron-builder supports both through environment variables
-(`CSC_LINK`/`CSC_KEY_PASSWORD`, `APPLE_ID`/`APPLE_APP_SPECIFIC_PASSWORD`/`APPLE_TEAM_ID`).
+- **macOS**: from version 1.4.1 the Mac app is signed with a Developer ID and notarized by Apple,
+  so it opens after the usual "downloaded from the internet" confirmation, and it updates itself.
+  Older versions weren't signed: on macOS 15 (Sequoia) and later, open the app once and dismiss
+  the warning, then go to **System Settings → Privacy & Security** and click **Open Anyway** next
+  to "ListenSync" (on macOS 14 and earlier, right-click the app → **Open** → **Open**).
+- **Windows**: the build isn't signed with a Windows code-signing certificate, so on the blue
+  "Windows protected your PC" screen, click **More info**, then **Run anyway**. electron-builder
+  can sign it with a certificate through `CSC_LINK`/`CSC_KEY_PASSWORD`.
 
 ## Releasing an update
 
@@ -157,10 +152,9 @@ also has a "Check for updates" button).
 
 - **Windows installer / Linux AppImage**: the update downloads in the background; the user
   clicks **Restart** (or it installs the next time the app is quit).
-- **macOS and the Windows portable .exe**: the app says a new version is out and **Download**
-  opens the release page. (macOS only lets apps replace themselves when they are signed with a
-  Developer ID; once the Mac build is signed and notarized, it switches to full self-updating
-  automatically.)
+- **macOS**: signed and notarized builds update themselves like the Windows installer.
+- **Windows portable .exe** (and unsigned Mac builds): the app says a new version is out and
+  **Download** opens the release page.
 
 To publish a release:
 
@@ -170,6 +164,11 @@ To publish a release:
    ```bash
    npm run release
    ```
+
+   The Mac app is signed with your "Developer ID Application" certificate (from the keychain) and
+   notarized with the App Store Connect API key in `.env` (`APPLE_API_KEY`, `APPLE_API_KEY_ID`,
+   `APPLE_API_ISSUER`; see `.env.example`). The script stops if either is missing, so a release
+   can't go out unsigned. Notarizing adds a few minutes while Apple checks the app.
 
    This creates a draft release `v<version>`, builds the Mac and Windows installers, uploads
    them along with the `latest.yml` / `latest-mac.yml` files the updater reads, and then

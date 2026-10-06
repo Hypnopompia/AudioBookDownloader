@@ -38,7 +38,8 @@
           ]
         }
       ],
-      "category": "public.app-category.entertainment"
+      "category": "public.app-category.entertainment",
+      "hardenedRuntime": true
     },
     "win": {
       "target": [

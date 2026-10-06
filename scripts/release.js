@@ -8,7 +8,9 @@
 // electron-builder create it races and fails), then it's published.
 
 const { execFileSync } = require('node:child_process');
+const fs = require('node:fs');
 const path = require('node:path');
+const { parseEnv } = require('../src/main/secrets');
 
 const root = path.join(__dirname, '..');
 const { version } = require(path.join(root, 'package.json'));
@@ -23,6 +25,32 @@ function releaseState() {
   } catch {
     return null;
   }
+}
+
+// Signing and notarizing the Mac app: a Developer ID certificate in the keychain, and an
+// App Store Connect API key from .env (passed to electron-builder, never bundled).
+let dotenv = {};
+try {
+  dotenv = parseEnv(fs.readFileSync(path.join(root, '.env'), 'utf8'));
+} catch {
+  /* no .env */
+}
+const APPLE_KEYS = ['APPLE_API_KEY', 'APPLE_API_KEY_ID', 'APPLE_API_ISSUER'];
+const apple = Object.fromEntries(APPLE_KEYS.map((k) => [k, process.env[k] || dotenv[k] || '']));
+const missing = APPLE_KEYS.filter((k) => !apple[k]);
+const identities = execFileSync('security', ['find-identity', '-v', '-p', 'codesigning'], { encoding: 'utf8' });
+if (!/Developer ID Application/.test(identities)) {
+  console.error('No "Developer ID Application" certificate in the keychain, so the Mac app would not be signed.');
+  console.error('Create one in Xcode: Settings > Accounts > Manage Certificates > + > Developer ID Application.');
+  process.exit(1);
+}
+if (missing.length) {
+  console.error(`Missing ${missing.join(', ')} in .env, so the Mac app would not be notarized. See .env.example.`);
+  process.exit(1);
+}
+if (!fs.existsSync(apple.APPLE_API_KEY)) {
+  console.error(`APPLE_API_KEY points to ${apple.APPLE_API_KEY}, which doesn't exist.`);
+  process.exit(1);
 }
 
 const existing = releaseState();
@@ -42,7 +70,7 @@ run('node', ['scripts/write-secrets.js']); // bundle API keys from .env (never c
 
 console.log('Building and uploading…');
 run('npx', ['electron-builder', '--mac', '--win', '--publish', 'always'], {
-  env: { ...process.env, GH_TOKEN: process.env.GH_TOKEN || gh('auth', 'token') },
+  env: { ...process.env, ...apple, GH_TOKEN: process.env.GH_TOKEN || gh('auth', 'token') },
 });
 
 console.log(`Publishing ${tag}…`);
