@@ -1183,7 +1183,7 @@ function openMakeRoom(d) {
   const shortBy = Math.max(0, fit.shortBy || 0);
   const selected = new Set();
   const status = el('div', { class: 'room-status' });
-  const go = el('button', { class: 'btn btn-danger', disabled: true }, 'Remove selected and add book');
+  const go = el('button', { class: 'btn btn-danger', disabled: true }, 'Remove selected and add this');
 
   const update = () => {
     const freed = books.filter((b) => selected.has(b.folder)).reduce((a, b) => a + b.size, 0);
@@ -1198,7 +1198,7 @@ function openMakeRoom(d) {
   go.onclick = async () => {
     const names = books.filter((b) => selected.has(b.folder));
     const ok = await confirmBox({
-      title: `Remove ${names.length} ${names.length === 1 ? 'book' : 'books'} from the drive?`,
+      title: `Remove ${names.length} ${names.length === 1 ? 'title' : 'titles'} from the drive?`,
       text: names.map((b) => b.title).join(', ') + '. You can always download them again later.',
       ok: 'Remove',
       danger: true,
@@ -1224,7 +1224,7 @@ function openMakeRoom(d) {
       el('h2', {}, 'Make room on the drive'),
       el('p', { class: 'muted' },
         `"${d.title}" needs ${fmtBytes(d.totalBytes)}, but only ${fmtBytes(Math.max(0, fit.free || 0))} is free. ` +
-        'Choose books to remove from the drive:'),
+        'Choose what to remove from the drive:'),
       books.length
         ? el('div', { class: 'room-list' },
           books.map((b) =>
@@ -1234,7 +1234,7 @@ function openMakeRoom(d) {
               el('span', { class: 's' }, fmtBytes(b.size)))))
         : el('p', {}, 'There are no audiobooks on this drive to remove. The drive is full of other files — try a bigger one, or remove files using your computer.'),
       books.length && books.reduce((a, b) => a + b.size, 0) < shortBy
-        ? el('p', { class: 'notice-inline' }, 'Even removing every audiobook would not free enough space. The rest of the drive is used by other files, so this book needs a bigger drive.')
+        ? el('p', { class: 'notice-inline' }, 'Even removing everything this app put on the drive would not free enough space. The rest of the drive is used by other files, so this needs a bigger drive.')
         : null,
       status),
     el('div', { class: 'dialog-foot' },
@@ -1279,7 +1279,7 @@ function renderDrivePanel() {
         el('div', { class: 'drive-meta' }, `${fmtBytes(drive.total)} · ${drive.fs}${drive.manual ? ' · chosen by hand' : ''}`))
     );
     if (drive.fs && /exfat/i.test(drive.fs)) {
-      nodes.push(el('div', { class: 'notice-inline' }, 'This drive is formatted as exFAT. Some headphones and players can only read FAT32. If books won’t play, the drive may need to be reformatted as FAT32.'));
+      nodes.push(el('div', { class: 'notice-inline' }, 'This drive is formatted as exFAT. Some headphones and players can only read FAT32. If files won’t play, the drive may need to be reformatted as FAT32.'));
     }
     if (drive.readOnly) nodes.push(el('div', { class: 'notice-inline' }, 'This drive is read-only. If it’s an SD card, slide the lock switch on its adapter up and plug it in again.'));
   }
@@ -1294,7 +1294,7 @@ function usageByType(c) {
   for (const b of c.books) {
     const src = b.identifier ? sourceOf(b.identifier, b.source) : null;
     if (src === 'podcasts') sizes.podcasts += b.size;
-    else if (src === 'otr') sizes.radio += b.size;
+    else if (src === 'otr' || src === 'lectures') sizes.radio += b.size;
     else if (src === 'live' || src === '78s') sizes.music += b.size;
     else if (src) sizes.books += b.size;
     else sizes.otherAudio += b.size; // folders copied onto the drive by hand
@@ -1319,7 +1319,7 @@ function renderUsage() {
   // [css class, label, bytes]; types with nothing on the drive are left out
   const types = [
     ['seg-books', 'Audiobooks', u.books],
-    ['seg-radio', 'Radio shows', u.radio],
+    ['seg-radio', 'Radio & talks', u.radio],
     ['seg-music', 'Music', u.music],
     ['seg-podcasts', 'Podcasts', u.podcasts],
     ['seg-other-audio', 'Other audio', u.otherAudio],
@@ -1406,7 +1406,7 @@ function renderCardView() {
       el('p', {}, `${c.books.length} ${c.books.length === 1 ? 'title' : 'titles'} on "${drive.label}" · ${fmtBytes(c.free)} free`)),
     el('div', { class: 'head-actions' },
       c.books.some((b) => b.managed)
-        ? el('button', { class: 'btn btn-secondary', disabled: !!state.verifying, title: 'Read every chapter back from the drive and make sure it matches the original', onclick: () => checkBooks() }, icon('check'), 'Check books')
+        ? el('button', { class: 'btn btn-secondary', disabled: !!state.verifying, title: 'Read every chapter back from the drive and make sure it matches the original', onclick: () => checkBooks() }, icon('check'), 'Check files')
         : null,
       el('button', { class: 'btn btn-secondary', onclick: () => api.card.reveal(state.mount).catch(showError) }, icon('folder'), 'Open drive in file browser'),
       el('button', { class: 'btn btn-primary', onclick: () => showView('browse') }, icon('plus'), 'Discover more')));
@@ -1420,7 +1420,7 @@ function renderCardView() {
     parts.push(
       el('div', { class: 'banner ok' }, icon('check'),
         el('div', {},
-          el('strong', {}, `Checking books… ${Math.min(p.index + 1, p.count)} of ${p.count}`),
+          el('strong', {}, `Checking files… ${Math.min(p.index + 1, p.count)} of ${p.count}`),
           title ? el('span', { class: 'muted' }, title) : null,
           el('div', { class: 'progress', style: { width: '100%', marginTop: '8px' } }, el('span', { style: { width: `${pct.toFixed(1)}%` } }))),
         el('button', { class: 'btn btn-secondary', onclick: () => api.card.cancelVerify() }, 'Stop'))
@@ -1430,23 +1430,23 @@ function renderCardView() {
   if (problems.length && !state.verifying) {
     parts.push(
       el('div', { class: 'banner error' }, icon('warn'),
-        el('div', {}, el('strong', {}, `${problems.length} ${problems.length === 1 ? 'book has' : 'books have'} a problem on the drive`),
-          'Press "Repair" to copy the book onto the drive again.'))
+        el('div', {}, el('strong', {}, `${problems.length} ${problems.length === 1 ? 'title has' : 'titles have'} a problem on the drive`),
+          'Press "Repair" to copy it onto the drive again.'))
     );
   }
 
   if (c.needsFix) {
     parts.push(
       el('div', { class: 'banner' }, icon('warn'),
-        el('div', {}, el('strong', {}, 'Some chapters or books are not in play order'),
-          'Many headphones play files in the order they were saved, not by name. This can happen after removing books or copying files by hand.'),
+        el('div', {}, el('strong', {}, 'Some files are not in play order'),
+          'Many headphones play files in the order they were saved, not by name. This can happen after removing titles or copying files by hand.'),
         el('button', { class: 'btn btn-primary', onclick: (e) => fixOrder(e.currentTarget) }, icon('sort'), 'Fix play order'))
     );
   }
 
   if (!c.books.length && !c.looseFiles.length) {
     parts.push(el('div', { class: 'state' }, el('h3', {}, 'This drive has no audiobooks yet'),
-      el('div', {}, 'Find a book you like and press "Put on drive".'),
+      el('div', {}, 'Find something you like and press "Put on drive".'),
       el('button', { class: 'btn btn-primary btn-big', onclick: () => showView('browse') }, 'Discover something to listen to')));
   } else {
     parts.push(el('div', { class: 'list' }, c.books.map((b, i) => bookRow(b, i))));
@@ -1464,9 +1464,9 @@ function renderCardView() {
 
   parts.push(
     el('details', { class: 'explain' },
-      el('summary', {}, 'How are books arranged on the drive?'),
+      el('summary', {}, 'How is everything arranged on the drive?'),
       el('p', {}, 'Each audiobook gets its own folder named after the book, and every chapter is numbered (001, 002, 003…) so it plays in the right order.'),
-      el('p', {}, 'Many headphones and MP3 players ignore file names and play files in the order they were saved to the drive. This app always copies chapters one at a time, in order. If you remove books or copy files by hand, use "Fix play order" to put everything back in order. Books are listed here in the order the headphones will see them.'))
+      el('p', {}, 'Many headphones and MP3 players ignore file names and play files in the order they were saved to the drive. This app always copies chapters one at a time, in order. If you remove titles or copy files by hand, use "Fix play order" to put everything back in order. Titles are listed here in the order the headphones will see them.'))
   );
   root.replaceChildren(...parts.filter(Boolean));
 }
@@ -1511,8 +1511,8 @@ async function checkBooks() {
     const results = await api.card.verify(mount, folders);
     const bad = results.filter((r) => r.status === 'problem').length;
     const unknown = results.filter((r) => r.status === 'unknown').length;
-    if (bad) toast(`${bad} ${bad === 1 ? 'book has' : 'books have'} a problem. Press "Repair" to fix ${bad === 1 ? 'it' : 'them'}.`, 'error');
-    else toast(`All ${results.length - unknown} books checked: every chapter matches the original.${unknown ? ` (${unknown} couldn’t be checked.)` : ''}`, 'success');
+    if (bad) toast(`${bad} ${bad === 1 ? 'title has' : 'titles have'} a problem. Press "Repair" to fix ${bad === 1 ? 'it' : 'them'}.`, 'error');
+    else toast(`All ${results.length - unknown} titles checked: every chapter matches the original.${unknown ? ` (${unknown} couldn’t be checked.)` : ''}`, 'success');
   } catch (err) {
     showError(err);
   } finally {
@@ -1526,8 +1526,8 @@ async function repairBook(b) {
   const ok = await confirmBox({
     title: `Repair "${b.title}"?`,
     text: localBook(b.identifier)
-      ? 'The book will be removed from the drive and copied again from this computer.'
-      : 'The book will be removed from the drive and downloaded again.',
+      ? 'It will be removed from the drive and copied again from this computer.'
+      : 'It will be removed from the drive and downloaded again.',
     ok: 'Repair',
   });
   if (!ok) return;
@@ -1546,7 +1546,7 @@ async function removeBook(b) {
   const ok = await confirmBox({
     title: `Remove "${b.title}" from the drive?`,
     text: `This frees up ${fmtBytes(b.size)}. You can download it again any time.`,
-    ok: 'Remove book',
+    ok: 'Remove',
     danger: true,
   });
   if (!ok) return;
@@ -1640,7 +1640,7 @@ function renderDownloads() {
   const root = $('#downloadsView');
   const parts = [
     el('div', { class: 'page-head' },
-      el('div', {}, el('h1', {}, 'Downloads'), el('p', {}, 'Books are downloaded from the internet, then copied to the drive in the right order.')),
+      el('div', {}, el('h1', {}, 'Downloads'), el('p', {}, 'Everything is downloaded from the internet, then copied to the drive in the right order.')),
       s.jobs.some((j) => ['done', 'error', 'cancelled'].includes(j.status))
         ? el('button', { class: 'btn btn-secondary', onclick: () => api.downloads.clear() }, 'Clear finished')
         : null),
@@ -1660,7 +1660,7 @@ function renderDownloads() {
   }
 
   if (!s.jobs.length) {
-    parts.push(el('div', { class: 'state' }, el('h3', {}, 'Nothing downloading'), el('div', {}, 'Books you add to the drive will show up here while they download.'),
+    parts.push(el('div', { class: 'state' }, el('h3', {}, 'Nothing downloading'), el('div', {}, 'Anything you add to the drive shows up here while it downloads.'),
       el('button', { class: 'btn btn-primary', onclick: () => showView('browse') }, 'Discover something to listen to')));
   } else {
     parts.push(el('div', { class: 'list' }, [...s.jobs].reverse().map(jobRow)));

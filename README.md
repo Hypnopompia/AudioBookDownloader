@@ -60,7 +60,7 @@ MP3 player (for example headphones with a card slot), with everything in the rig
 - **Save to computer**: download a book now, then listen on the computer or copy it to an SD card later without downloading it again. Saved books live in `Music/ListenSync/`.
 - **My library**: continue listening where you left off, manage books saved on this computer (Play, Copy to SD card, Delete, Delete all, disk usage), and see finished books.
 - **Starred** in the sidebar: quick access to every book you've starred.
-- **Check books** on the SD card screen: reads every chapter back from the card and compares its size and MD5 checksum with the original. The reference is the checksum list saved with the book, then the copy on this computer, then archive.org's published checksums. Damaged or incomplete books are flagged with a **Repair** button, and the "On SD card" badge changes to "Check SD card" or "On SD card ✓".
+- **Check files** on the "On the drive" screen: reads every chapter back from the card and compares its size and MD5 checksum with the original. The reference is the checksum list saved with the book, then the copy on this computer, then archive.org's published checksums. Damaged or incomplete books are flagged with a **Repair** button, and the "On SD card" badge changes to "Check SD card" or "On SD card ✓".
 - **Star / Mark as read / Not interested** on any book. "Not interested" books are hidden while browsing. The "Show" filter switches between all, starred, unread, read and hidden books.
 - **Choose chapters or episodes**: long books and radio series (some have thousands of episodes) can be copied or saved in batches. "Select next that fit" picks as many consecutive episodes as fit on the card, continuing after the last batch you copied, so you can rotate through a series. Also available: All, None, a from/to range, and Shift-click. Batches keep their original numbers (`0763 - …mp3`) in folders like "The Lone Ranger (episodes 101-185)", and the player resumes by episode number across batches.
 - **Split long chapters** (Settings): when copying to an SD card, chapters longer than the chosen length (10–30 minutes) are cut into numbered parts, so players that forget their place have less to skip through. Splitting is done in plain JavaScript on MP3 frame boundaries, with no re-encoding and no ffmpeg. Each part gets its own title, album, artist and track tags.
@@ -244,7 +244,7 @@ src/main/downloader.js  download queue: parallel downloads, ordered copy, ETA
 src/main/local.js       books saved on this computer (Music/ListenSync)
 src/main/libstate.js    starred / read / not interested / listening position (library.json)
 src/main/media.js       abook:// protocol that streams MP3s to the player (with seeking)
-src/main/verify.js      "Check books": compares card files with expected sizes/MD5s
+src/main/verify.js      "Check files": compares card files with expected sizes/MD5s
 src/main/mp3split.js    MP3 frame parser + splitter + minimal ID3v2 writer (no ffmpeg)
 src/renderer/shelves.js Home shelves, genre chips, Settings dialog
 src/main/podcasts.js    podcast directory (Podcast Index / Apple), charts, episodes

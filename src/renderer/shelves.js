@@ -133,7 +133,7 @@ function openSettings() {
         ['30', 'Split into parts of about 30 minutes'],
       ], (v) => save({ splitMinutes: v })),
       el('p', { class: 'hint' },
-        'Applies to books put on a drive from now on. Books saved on this computer keep their original chapters. ' +
+        'Applies to anything put on a drive from now on. Titles saved on this computer keep their original chapters. ' +
         'Chapters only slightly longer than the part length are left whole.'),
 
       el('h3', {}, 'Sound quality for new downloads'),
@@ -141,9 +141,9 @@ function openSettings() {
         ['standard', 'Standard (recommended): smaller files, great for spoken word'],
         ['high', 'High: about twice the size'],
       ], (v) => save({ quality: v })),
-      el('p', { class: 'hint' }, 'You can also choose the quality for each book in its details.'),
+      el('p', { class: 'hint' }, 'You can also choose the quality for each title in its details.'),
 
-      el('h3', {}, 'Lists of books and shows'),
+      el('h3', {}, 'Lists of books, shows and music'),
       select(s.listSource || 'github', [
         ['github', 'Faster (recommended): updated once a week'],
         ['archive', 'Most up to date: can take several minutes'],

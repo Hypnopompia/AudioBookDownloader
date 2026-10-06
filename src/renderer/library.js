@@ -77,13 +77,13 @@ function renderLibrary() {
     el('div', { class: 'section-head' },
       el('div', { class: 'section-title' }, 'Saved on this computer'),
       el('div', { class: 'head-actions' },
-        el('span', { class: 'muted' }, L.books.length ? `${L.books.length} ${L.books.length === 1 ? 'book' : 'books'} · ${fmtBytes(L.total)}` : ''),
+        el('span', { class: 'muted' }, L.books.length ? `${L.books.length} ${L.books.length === 1 ? 'title' : 'titles'} · ${fmtBytes(L.total)}` : ''),
         el('button', { class: 'btn btn-secondary btn-small', title: L.root, onclick: () => api.local.reveal().catch(showError) }, icon('folder'), 'Open folder'),
         L.books.length ? el('button', { class: 'btn btn-danger-ghost btn-small', onclick: deleteAllLocal }, icon('trash'), 'Delete all') : null))
   );
   if (!L.books.length) {
     parts.push(el('p', { class: 'muted' },
-      'Nothing saved yet. Open any book and press "Save to computer" to download it now, so you can listen here or copy it to a drive later without waiting.'));
+      'Nothing saved yet. Open anything you’d like to hear and press "Save to computer" to download it now, so you can listen here or copy it to a drive later without waiting.'));
   } else {
     parts.push(el('div', { class: 'list' }, L.books.map(localRow)));
   }
@@ -99,7 +99,7 @@ function renderLibrary() {
   }
   const hidden = entries.filter(([, e]) => e.status === 'not_interested').length;
   if (hidden) {
-    parts.push(el('p', { class: 'muted' }, `${hidden} ${hidden === 1 ? 'book is' : 'books are'} marked "Not interested" and hidden while browsing. `,
+    parts.push(el('p', { class: 'muted' }, `${hidden} ${hidden === 1 ? 'title is' : 'titles are'} marked "Not interested" and hidden while browsing. `,
       el('button', { class: 'link', onclick: () => { state.show = 'hidden'; $('#show').value = 'hidden'; showView('browse'); applyFilters(); } }, 'Show them')));
   }
   root.replaceChildren(...parts.filter(Boolean));
@@ -180,8 +180,8 @@ async function deleteLocal(b) {
 async function deleteAllLocal() {
   const L = state.local;
   const ok = await confirmBox({
-    title: 'Delete all saved books from this computer?',
-    text: `This deletes ${L.books.length} ${L.books.length === 1 ? 'book' : 'books'} and frees up ${fmtBytes(L.total)}. Copies on drives are not affected.`,
+    title: 'Delete everything saved on this computer?',
+    text: `This deletes ${L.books.length} ${L.books.length === 1 ? 'title' : 'titles'} and frees up ${fmtBytes(L.total)}. Copies on drives are not affected.`,
     ok: 'Delete all',
     danger: true,
   });
@@ -189,7 +189,7 @@ async function deleteAllLocal() {
   stopPlayerIf((src) => src.kind === 'local');
   try {
     await api.local.removeAll();
-    toast('Saved books deleted from this computer.');
+    toast('Everything saved on this computer was deleted.');
   } catch (err) {
     showError(err);
   }
@@ -217,12 +217,12 @@ function renderStarred() {
   const starred = starredEntries();
   const head = el('div', { class: 'page-head' },
     el('div', {}, el('h1', {}, 'Starred'),
-      el('p', {}, starred.length ? `${starred.length} saved for later` : 'Books and podcasts you star show up here.')));
+      el('p', {}, starred.length ? `${starred.length} saved for later` : 'Anything you star shows up here.')));
   if (!starred.length) {
     root.replaceChildren(head,
       el('div', { class: 'state' },
-        el('h3', {}, 'No starred books yet'),
-        el('div', {}, 'Open any book and press "Star" to keep it here for quick access.'),
+        el('h3', {}, 'Nothing starred yet'),
+        el('div', {}, 'Open anything and press "Star" to keep it here for quick access.'),
         el('button', { class: 'btn btn-primary', onclick: () => showView('browse') }, 'Discover something to listen to')));
     return;
   }
