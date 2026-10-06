@@ -18,7 +18,10 @@ caches or file formats in settings, buttons or messages unless there's no other 
 - Take them with a separate profile (`LISTENSYNC_PROFILE`, see below) and a fake drive: a 512 MB
   FAT32 disk image named HEADPHONES
   (`hdiutil create -size 512m -fs "MS-DOS FAT32" -volname HEADPHONES -layout MBRSPUD x.dmg`).
-- Match the existing images: 1600×1010, which is the app at 1280×808 at 1.25× scale.
+  The app ignores disk images unless started with `SD_LOADER_ALLOW_DISK_IMAGES=1`.
+- Match the existing images: 1600×1010, which is the app at 1280×808 at 1.25× scale, with
+  scrollbars hidden. The app's CSP blocks `<style>` tags, so hide them from script with a
+  constructed stylesheet (`document.adoptedStyleSheets`) and inline styles.
 
 ## Testing the app
 

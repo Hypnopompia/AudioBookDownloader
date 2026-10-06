@@ -7,12 +7,16 @@ MP3 player (for example headphones with a card slot), with everything in the rig
 **[Download ListenSync](https://hypnopompia.github.io/ListenSync/)** for macOS or Windows
 (or see [all releases](https://github.com/Hypnopompia/ListenSync/releases/latest)).
 
-![ListenSync: browsing LibriVox audiobooks](docs/screenshots/discover.png)
+![ListenSync: browsing audiobooks](docs/screenshots/discover.png)
 
 <table>
   <tr>
     <td width="50%"><img src="docs/screenshots/book-details.png" alt="Book details with rating, description and chapters"><br><sub>Details, ratings and chapters for every book</sub></td>
     <td width="50%"><img src="docs/screenshots/podcasts.png" alt="Podcasts by category"><br><sub>Podcasts: top charts by category, plus search</sub></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/live-music.png" alt="A live concert with its track list"><br><sub>Live concerts, with every show's track list</sub></td>
+    <td><img src="docs/screenshots/vintage-music.png" alt="Vintage jazz songs from 78 rpm records"><br><sub>Vintage music from old 78 rpm records, by genre</sub></td>
   </tr>
   <tr>
     <td><img src="docs/screenshots/drive.png" alt="What's on the drive, checked and in play order"><br><sub>What's on the drive, checked and in play order</sub></td>
