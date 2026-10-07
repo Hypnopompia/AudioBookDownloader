@@ -23,6 +23,10 @@
         <div id="driveArea"></div>
         <div id="usage"></div>
         <div class="panel-actions">
+          <button class="btn btn-primary btn-block" id="showDriveBtn" hidden>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 2h9a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V7zm1 2v4h2V4zm3 0v4h2V4zm3 0v4h2V4z"/></svg>
+            Show drive contents
+          </button>
           <button class="btn btn-secondary btn-block" id="ejectBtn" hidden>
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5l7 8H5zM5 16h14v3H5z"/></svg>
             Eject drive
@@ -39,11 +43,6 @@
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 17.3 5.8 21l1.6-7L2 9.2l7.2-.6L12 2l2.8 6.6 7.2.6-5.4 4.8 1.6 7z"/></svg>
           <span>Starred</span>
           <span class="tab-count" id="starCount"></span>
-        </button>
-        <button class="tab" data-view="card">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 2h9a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V7zm1 2v4h2V4zm3 0v4h2V4zm3 0v4h2V4z"/></svg>
-          <span>On the drive</span>
-          <span class="tab-count" id="cardCount"></span>
         </button>
         <button class="tab" data-view="library">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 3h3v18H4zm5 0h3v18H9zm5.2 1.1 2.9-.8 4.7 17.4-2.9.8z"/></svg>

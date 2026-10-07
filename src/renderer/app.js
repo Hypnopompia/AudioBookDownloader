@@ -659,7 +659,7 @@ function decorateCover(cover, id, onCard, queued) {
   let badge = null;
   const cb = onCard.has(id) ? cardBook(id) : null;
   if (state.podNew?.has(id)) badge = el('span', { class: 'badge new' }, 'New episodes'); // followed podcast with new episodes
-  else if (cb && (!cb.complete || cb.check?.status === 'problem')) badge = el('span', { class: 'badge warn', title: 'Open "On the drive" to repair it' }, 'Check drive');
+  else if (cb && (!cb.complete || cb.check?.status === 'problem')) badge = el('span', { class: 'badge warn', title: 'Click "Show drive contents" to repair it' }, 'Check drive');
   else if (cb && cb.check?.status === 'ok') badge = el('span', { class: 'badge', title: `Checked: every ${cb.unit || 'chapter'} matches the original` }, 'On drive ✓');
   else if (cb) badge = el('span', { class: 'badge' }, 'On drive');
   else if (queued.has(id)) badge = el('span', { class: 'badge queued' }, 'Downloading');
@@ -1257,7 +1257,7 @@ function openMakeRoom(d) {
 }
 
 // =========================================================================
-// drive (sidebar + "On the drive" view)
+// drive (sidebar + "Drive contents" view)
 // =========================================================================
 
 function renderDrivePanel() {
@@ -1265,6 +1265,7 @@ function renderDrivePanel() {
   const all = [...state.drives, ...state.manualDrives];
   const drive = currentDrive();
   $('#ejectBtn').hidden = !drive || drive.manual;
+  $('#showDriveBtn').hidden = !drive;
 
   if (!all.length) {
     area.replaceChildren(
@@ -1299,19 +1300,21 @@ function renderDrivePanel() {
   renderUsage();
 }
 
-/** Space used on the drive, split by type of content. */
+/** Space used on the drive and number of titles, split by type of content. */
 function usageByType(c) {
-  const sizes = { books: 0, radio: 0, music: 0, podcasts: 0, otherAudio: 0 };
+  const types = {};
+  for (const k of ['books', 'radio', 'music', 'podcasts', 'otherAudio']) types[k] = { bytes: 0, count: 0 };
+  const add = (k, size) => { types[k].bytes += size; types[k].count++; };
   for (const b of c.books) {
     const src = b.identifier ? sourceOf(b.identifier, b.source) : null;
-    if (src === 'podcasts') sizes.podcasts += b.size;
-    else if (src === 'otr' || src === 'lectures') sizes.radio += b.size;
-    else if (src === 'live' || src === '78s') sizes.music += b.size;
-    else if (src) sizes.books += b.size;
-    else sizes.otherAudio += b.size; // folders copied onto the drive by hand
+    if (src === 'podcasts') add('podcasts', b.size);
+    else if (src === 'otr' || src === 'lectures') add('radio', b.size);
+    else if (src === 'live' || src === '78s') add('music', b.size);
+    else if (src) add('books', b.size);
+    else add('otherAudio', b.size); // folders copied onto the drive by hand
   }
-  sizes.otherAudio += c.looseFiles.reduce((a, f) => a + f.size, 0);
-  return sizes;
+  for (const f of c.looseFiles) add('otherAudio', f.size);
+  return types;
 }
 
 function renderUsage() {
@@ -1327,23 +1330,26 @@ function renderUsage() {
   const pct = (v) => `${Math.max(0, (v / total) * 100)}%`;
   const hours = Math.floor(free / BYTES_PER_HOUR);
   const u = usageByType(c);
-  // [css class, label, bytes]; types with nothing on the drive are left out
+  // [css class, label, { bytes, count }]; types with nothing on the drive are left out
   const types = [
     ['seg-books', 'Audiobooks', u.books],
     ['seg-radio', 'Radio & talks', u.radio],
     ['seg-music', 'Music', u.music],
     ['seg-podcasts', 'Podcasts', u.podcasts],
     ['seg-other-audio', 'Other audio', u.otherAudio],
-  ].filter(([, , bytes]) => bytes > 0);
-  const row = (cls, label, bytes, style) => [el('i', { class: cls, style }), label, el('span', { class: 'num' }, fmtBytes(bytes))];
+  ].filter(([, , t]) => t.count > 0);
+  const row = (cls, label, bytes, style, count) => [
+    el('i', { class: cls, style }),
+    el('span', {}, label, count ? el('span', { class: 'legend-count', title: `${count} on the drive` }, String(count)) : null),
+    el('span', { class: 'num' }, fmtBytes(bytes))];
   $('#usage').replaceChildren(
     el('div', { class: 'usage-free' }, fmtBytes(free), ' ', el('small', {}, 'free')),
     el('div', { class: 'usage-bar', title: 'Drive space' },
-      types.map(([cls, , bytes]) => el('span', { class: cls, style: { width: pct(bytes) } })),
+      types.map(([cls, , t]) => el('span', { class: cls, style: { width: pct(t.bytes) } })),
       el('span', { class: 'seg-pending', style: { width: pct(pending) } }),
       el('span', { class: 'seg-other', style: { width: pct(c.otherSize) } })),
     el('div', { class: 'legend' },
-      types.map(([cls, label, bytes]) => row(cls, label, bytes)),
+      types.map(([cls, label, t]) => row(cls, label, t.bytes, null, t.count)),
       pending ? row('seg-pending', 'Being added', pending) : null,
       row('seg-other', 'Other files', c.otherSize),
       row('', 'Free', free, { background: 'var(--surface)', border: '1px solid var(--border)' })),
@@ -1392,8 +1398,6 @@ async function refreshCard() {
   renderCardView();
   refreshBadges();
   refreshBookDialog();
-  const n = state.card?.books.length || 0;
-  $('#cardCount').textContent = n ? String(n) : '';
 }
 
 function renderCardView() {
@@ -1413,7 +1417,7 @@ function renderCardView() {
 
   const head = el('div', { class: 'page-head' },
     el('div', {},
-      el('h1', {}, 'On the drive'),
+      el('h1', {}, 'Drive contents'),
       el('p', {}, `${c.books.length} ${c.books.length === 1 ? 'title' : 'titles'} on "${drive.label}" · ${fmtBytes(c.free)} free`)),
     el('div', { class: 'head-actions' },
       c.books.some((b) => b.managed)
@@ -1605,7 +1609,7 @@ async function ejectCard() {
   btn.disabled = true;
   try {
     const msg = await api.drives.eject(drive.mount);
-    await confirmBox({ title: 'Drive ejected', text: `${msg} Put it back in the headphones and enjoy!`, ok: 'OK', cancel: null });
+    await confirmBox({ title: 'Drive ejected', text: `${msg} Insert your drive into your MP3 player and enjoy!`, ok: 'OK', cancel: null });
   } catch (err) {
     await confirmBox({ title: 'Could not eject the drive', text: err.message, ok: 'OK', cancel: null });
   } finally {
@@ -1622,6 +1626,7 @@ function onDrivesChanged(list) {
     state.card = null;
   }
   if (state.mount) api.settings.set({ lastMount: state.mount }).catch(() => {});
+  if (!state.mount && state.view === 'card') showView('browse');
   renderDrivePanel();
   refreshCard();
 }
@@ -1749,6 +1754,7 @@ function onDownloadsChanged(snap) {
 function showView(name) {
   state.view = name;
   for (const t of document.querySelectorAll('.tab[data-view]')) t.classList.toggle('active', t.dataset.view === name);
+  $('#showDriveBtn').classList.toggle('active', name === 'card');
   for (const v of document.querySelectorAll('.view')) v.hidden = v.id !== `view-${name}`;
   if (name === 'card') refreshCard();
   if (name === 'library') refreshLocal();
@@ -1765,6 +1771,7 @@ function debounce(fn, ms) {
 
 async function init() {
   for (const t of document.querySelectorAll('.tab[data-view]')) t.addEventListener('click', () => showView(t.dataset.view)); // (Settings is a tab-styled button that opens a dialog)
+  $('#showDriveBtn').addEventListener('click', () => showView('card'));
   $('#ejectBtn').addEventListener('click', ejectCard);
   $('#refreshBtn').addEventListener('click', () => loadCatalog(state.sourceId, true));
   $('#search').addEventListener('input', debounce((e) => { state.query = e.target.value; applyFilters(); }, 200));

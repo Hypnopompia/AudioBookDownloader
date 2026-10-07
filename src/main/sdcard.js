@@ -108,7 +108,7 @@ function sameOrder(a, b) {
   return a.length === b.length && a.every((v, i) => v === b[i]);
 }
 
-/** Everything the "On the drive" screen needs. */
+/** Everything the "Drive contents" screen needs. */
 async function listCard(mount) {
   await cleanAppleDouble(mount).catch(() => {});
   const { total, free } = await space(mount);

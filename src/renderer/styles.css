@@ -91,7 +91,9 @@ button { font: inherit; color: inherit; }
   gap: 12px;
 }
 .panel h2 { margin: 0; font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.panel-actions { display: flex; flex-direction: column; gap: 8px; }
 .panel-actions:empty { display: none; }
+#showDriveBtn.active, #showDriveBtn.active:hover { background: var(--accent-soft); color: var(--accent-strong); border-color: var(--accent); }
 
 .drive-empty { display: flex; flex-direction: column; gap: 10px; font-size: 15px; }
 .drive-empty strong { font-size: 16px; }
@@ -118,6 +120,10 @@ button { font: inherit; color: inherit; }
 .usage-free small { font: 400 14px var(--sans); color: var(--muted); }
 .legend { display: grid; grid-template-columns: auto 1fr auto; gap: 3px 8px; font-size: 13px; align-items: center; }
 .legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+.legend-count {
+  margin-left: 6px; padding: 0 7px; border-radius: 9px; font-size: 11px; font-weight: 700;
+  background: var(--surface); border: 1px solid var(--border); color: var(--muted); font-variant-numeric: tabular-nums;
+}
 .legend .num { text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
 .hint { font-size: 13px; color: var(--muted); }
 .notice-inline { font-size: 13px; padding: 8px 10px; border-radius: 8px; background: var(--warn-soft); color: var(--warn); }
