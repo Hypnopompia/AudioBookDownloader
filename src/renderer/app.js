@@ -1825,6 +1825,7 @@ async function init() {
     if (state.view === 'card') renderCardView();
   });
   api.onNotice(({ kind, text }) => toast(text, kind));
+  api.onAbout(showAbout);
   api.library.onChange(({ key, entry }) => {
     state.lib[key] = entry;
     updateStarCount();

@@ -420,14 +420,7 @@ async function onQueueIdle() {
  * shows "Electron" as the bold app name because that comes from the Electron
  * binary; the packaged app shows "ListenSync".)
  */
-function setupMenuAndAbout() {
-  app.setAboutPanelOptions({
-    applicationName: APP_NAME,
-    applicationVersion: app.getVersion(),
-    version: '',
-    copyright: 'Audiobooks from LibriVox and the Internet Archive. Not affiliated with either.',
-    iconPath: ICON,
-  });
+function setupMenu() {
   if (process.platform !== 'darwin') return;
   if (!app.isPackaged) app.dock?.setIcon(nativeImage.createFromPath(ICON));
   Menu.setApplicationMenu(
@@ -435,7 +428,7 @@ function setupMenuAndAbout() {
       {
         label: APP_NAME,
         submenu: [
-          { role: 'about', label: `About ${APP_NAME}` },
+          { label: `About ${APP_NAME}`, click: () => send('app:about') }, // our own dialog, so it can have links
           { type: 'separator' },
           { role: 'hide', label: `Hide ${APP_NAME}` },
           { role: 'hideOthers' },
@@ -461,7 +454,7 @@ function setupMenuAndAbout() {
 }
 
 app.whenReady().then(() => {
-  setupMenuAndAbout();
+  setupMenu();
   const userData = app.getPath('userData');
   settings.init(userData);
   catalog.init(path.join(userData, 'cache'), { getListSource: () => settings.get().listSource });

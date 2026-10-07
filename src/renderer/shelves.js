@@ -204,6 +204,35 @@ async function clearLists() {
 }
 
 // =========================================================================
+// About
+// =========================================================================
+
+const AUTHOR = 'TJ Hunter';
+const PROJECT_URL = 'https://hypnopompia.github.io/ListenSync/';
+
+function projectLink() {
+  return el('button', { class: 'link', onclick: () => api.openExternal(PROJECT_URL) }, PROJECT_URL.replace(/^https:\/\/|\/$/g, ''));
+}
+
+/** The About dialog, opened from the app menu on a Mac. */
+async function showAbout() {
+  const dlg = $('#aboutDialog');
+  if (dlg.open) return;
+  const info = await api.info().catch(() => ({}));
+  dlg.replaceChildren(
+    el('div', { class: 'dialog-body about' },
+      el('img', { class: 'about-icon', src: '../assets/icon.png', alt: '' }),
+      el('h2', {}, 'ListenSync'),
+      el('div', { class: 'muted' }, `Version ${info.version || ''}`),
+      el('p', {}, 'Free audiobooks, radio, music and podcasts for your MP3 player.'),
+      el('p', {}, `Made by ${AUTHOR}`, el('br'), projectLink()),
+      el('p', { class: 'hint' }, 'Audiobooks come from LibriVox and the Internet Archive. This app is not affiliated with or endorsed by either.')),
+    el('div', { class: 'dialog-foot' }, el('button', { class: 'btn btn-primary', autofocus: true, onclick: () => dlg.close() }, 'OK'))
+  );
+  dlg.showModal();
+}
+
+// =========================================================================
 // App updates (see src/main/updater.js)
 // =========================================================================
 
@@ -252,7 +281,7 @@ function renderUpdateStatus() {
       el('button', { class: 'link', onclick: () => api.openExternal('https://archive.org') }, 'Internet Archive'),
       ', which hosts them. This app is not affiliated with or endorsed by either. ' +
         'Recordings uploaded by Internet Archive members may be under copyright; you are responsible for making sure your use is allowed where you live.'),
-    el('p', { class: 'hint' }, 'Free and open source (MIT license).'),
+    el('p', { class: 'hint' }, `Made by ${AUTHOR}. Free and open source (MIT license): `, projectLink()),
   ].filter(Boolean)); // (replaceChildren would print null as text)
 }
 

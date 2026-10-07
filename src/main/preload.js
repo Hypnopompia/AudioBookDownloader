@@ -87,4 +87,5 @@ contextBridge.exposeInMainWorld('api', {
     onChange: (cb) => on('update:changed', cb),
   },
   onNotice: (cb) => on('app:notice', cb),
+  onAbout: (cb) => on('app:about', cb),
 });
