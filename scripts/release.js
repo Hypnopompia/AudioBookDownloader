@@ -67,10 +67,12 @@ if (existing && !existing.isDraft) {
 }
 if (!existing) {
   console.log(`Creating draft release ${tag}…`);
-  // Start the notes at the previous app version, not the "catalog" lists release.
+  // The release page gets the same notes users see in "What's new", plus a link to every code
+  // change since the previous app version (not the "catalog" lists release).
   const [previous] = JSON.parse(gh('release', 'list', '-R', repo, '--exclude-drafts', '--exclude-pre-releases', '--limit', '1', '--json', 'tagName'));
-  const since = previous ? ['--notes-start-tag', previous.tagName] : [];
-  gh('release', 'create', tag, '-R', repo, '--draft', '--title', version, '--target', 'main', '--generate-notes', ...since);
+  const body = notes.changes.map((c) => `- ${c}`).join('\n') +
+    (previous ? `\n\n**Full Changelog**: https://github.com/${repo}/compare/${previous.tagName}...${tag}` : '');
+  gh('release', 'create', tag, '-R', repo, '--draft', '--title', version, '--target', 'main', '--notes', body);
 }
 
 run('node', ['scripts/write-secrets.js']); // bundle API keys from .env (never committed)
