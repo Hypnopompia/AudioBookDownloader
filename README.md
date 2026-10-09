@@ -26,6 +26,10 @@ MP3 player (for example headphones with a card slot), with everything in the rig
     <td><img src="docs/screenshots/library.png" alt="My library with the built-in player"><br><sub>Listen on the computer and pick up where you left off</sub></td>
     <td><img src="docs/screenshots/downloads.png" alt="Downloads with progress and time left"><br><sub>Downloads with progress and time left</sub></td>
   </tr>
+  <tr>
+    <td><img src="docs/screenshots/history.png" alt="History of what was copied to each named drive"><br><sub>Name your drives and see what went on each one, and when</sub></td>
+    <td><img src="docs/screenshots/starred.png" alt="Starred titles"><br><sub>Star titles to put on a drive later</sub></td>
+  </tr>
 </table>
 
 ## What it does
