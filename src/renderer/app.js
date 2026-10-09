@@ -1431,7 +1431,7 @@ function renderCardView() {
   const head = el('div', { class: 'page-head' },
     el('div', {},
       el('h1', {}, 'Drive contents'),
-      el('p', {}, `${c.books.length} ${c.books.length === 1 ? 'title' : 'titles'} on "${drive.label}" · ${fmtBytes(c.free)} free`)),
+      el('p', {}, `${c.books.length} ${c.books.length === 1 ? 'title' : 'titles'} on "${drive.name || drive.label}" · ${fmtBytes(c.free)} free`)),
     el('div', { class: 'head-actions' },
       c.books.some((b) => b.managed)
         ? el('button', { class: 'btn btn-secondary', disabled: !!state.verifying, title: 'Read every file back from the drive and make sure it matches the original', onclick: () => checkBooks() }, icon('check'), 'Check files')
