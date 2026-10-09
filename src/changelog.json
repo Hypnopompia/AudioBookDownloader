@@ -1,6 +1,7 @@
 [
   {
     "version": "1.5.0",
+    "date": "2026-10-08",
     "changes": [
       "Give each drive a name, like “Mitchell’s card 1”. ListenSync asks the first time you plug a new one in. The drive’s own name doesn’t change.",
       "New History tab: see what was put on each drive and when it was removed, and what’s on each drive even when it’s unplugged.",
