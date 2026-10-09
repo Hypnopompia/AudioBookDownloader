@@ -47,6 +47,7 @@ const ICONS = {
   pause: 'M6 5h4v14H6zm8 0h4v14h-4z',
   download: 'M11 3h2v9l3.3-3.3 1.4 1.4L12 15.8 6.3 10.1l1.4-1.4L11 12zM4 18h16v2H4z',
   computer: 'M3 4h18v12H3zm2 2v8h14V6zM8 18h8v2H8z',
+  pencil: 'M3 17.2V21h3.8L17.8 10l-3.8-3.8zM20.7 7.1a1 1 0 0 0 0-1.4l-2.4-2.4a1 1 0 0 0-1.4 0l-1.8 1.8 3.8 3.8z',
 };
 function icon(name) {
   const svg = document.createElementNS(SVG_NS, 'svg');
@@ -306,6 +307,7 @@ const state = {
   genres: [],
   lib: {}, // per-book starred / status / position (see libstate.js)
   local: { books: [], total: 0, root: '' }, // books saved on this computer
+  history: { drives: [], events: [], summary: {} }, // what was copied to which drive (see history.js)
 };
 
 // ------------------------------------------------------------ personal library helpers
@@ -663,6 +665,7 @@ function decorateCover(cover, id, onCard, queued) {
   else if (cb && cb.check?.status === 'ok') badge = el('span', { class: 'badge', title: `Checked: every ${cb.unit || 'chapter'} matches the original` }, 'On drive ✓');
   else if (cb) badge = el('span', { class: 'badge' }, 'On drive');
   else if (queued.has(id)) badge = el('span', { class: 'badge queued' }, 'Downloading');
+  else if (copiedBefore(id)) badge = el('span', { class: 'badge copied', title: copiedBefore(id).text }, 'Previously copied');
   else if (localBook(id)) badge = el('span', { class: 'badge local' }, 'On computer');
   else if (e.status === 'read') badge = el('span', { class: 'badge read' }, 'Read');
   if (badge) cover.append(badge);
@@ -925,6 +928,9 @@ function renderBook(d) {
   if (d.language) addFact('Language', langName(langKey(d.language)));
   addFact(podcast ? 'Newest episode' : 'Published', d.date);
   if (onCardNums.size) addFact('On the drive', allOnCard ? `All ${unitWord(d)}` : `${onCardNums.size.toLocaleString()} of ${total.toLocaleString()} ${unitWord(d)}`);
+  const before = copiedBefore(id);
+  const beforeNums = new Set(before && !before.full ? before.numbers : []);
+  if (before) addFact('Previously copied', before.full ? before.text : `${before.text} (${beforeNums.size.toLocaleString()} ${unitWord(d, beforeNums.size)})`);
   if (savedNums.size) addFact('On this computer', savedNums.size >= total ? `All ${unitWord(d)}` : `${savedNums.size.toLocaleString()} of ${total.toLocaleString()} ${unitWord(d)}`);
 
   let quality = null;
@@ -952,6 +958,7 @@ function renderBook(d) {
         el('span', { class: 't' }, t.title,
           podcast && t.date ? el('span', { class: 'ep-date' }, new Date(t.date * 1000).toLocaleDateString()) : null,
           onCardNums.has(t.number) ? el('span', { class: 'tag ok' }, 'On drive') : null,
+          !onCardNums.has(t.number) && beforeNums.has(t.number) ? el('span', { class: 'tag copied' }, 'Previously copied') : null,
           savedNums.has(t.number) ? el('span', { class: 'tag muted' }, 'Saved') : null),
         el('span', { class: 'd' }, fmtClock(t.seconds)))));
 
@@ -1281,14 +1288,20 @@ function renderDrivePanel() {
   const nodes = [];
   if (all.length > 1) {
     const sel = el('select', { class: 'drive-select', onchange: (e) => selectDrive(e.target.value) },
-      all.map((d) => el('option', { value: d.mount, selected: d.mount === state.mount }, `${d.label} (${fmtBytes(d.total)})`)));
+      all.map((d) => el('option', { value: d.mount, selected: d.mount === state.mount }, `${d.name || d.label} (${fmtBytes(d.total)})`)));
     nodes.push(sel);
   }
   if (drive) {
     nodes.push(
       el('div', {},
-        el('div', { class: 'drive-name' }, icon('card'), drive.label),
-        el('div', { class: 'drive-meta' }, `${fmtBytes(drive.total)} · ${drive.fs}${drive.manual ? ' · chosen by hand' : ''}`))
+        el('div', { class: 'drive-name' }, icon('card'), el('span', {}, drive.name || drive.label),
+          el('button', { class: 'icon-btn', title: drive.name ? 'Rename this drive' : 'Give this drive a name', onclick: renameCurrentDrive }, icon('pencil'))),
+        el('div', { class: 'drive-meta' }, [
+          drive.name && drive.name !== drive.label ? `"${drive.label}"` : '',
+          fmtBytes(drive.total),
+          String(drive.fs || '').replace(/^MS-DOS \((FAT\d+)\)$/, '$1'),
+          drive.manual ? 'chosen by hand' : '',
+        ].filter(Boolean).join(' · ')))
     );
     if (drive.fs && /exfat/i.test(drive.fs)) {
       nodes.push(el('div', { class: 'notice-inline' }, 'This drive is formatted as exFAT. Some headphones and players can only read FAT32. If files won’t play, the drive may need to be reformatted as FAT32.'));
@@ -1629,6 +1642,8 @@ function onDrivesChanged(list) {
   if (!state.mount && state.view === 'card') showView('browse');
   renderDrivePanel();
   refreshCard();
+  if (state.view === 'history') renderHistory();
+  offerDriveNames();
 }
 
 // =========================================================================
@@ -1679,7 +1694,10 @@ function renderDownloads() {
     parts.push(el('div', { class: 'state' }, el('h3', {}, 'Nothing downloading'), el('div', {}, 'Anything you add to the drive shows up here while it downloads.'),
       el('button', { class: 'btn btn-primary', onclick: () => showView('browse') }, 'Discover something to listen to')));
   } else {
-    parts.push(el('div', { class: 'list' }, [...s.jobs].reverse().map(jobRow)));
+    // Unfinished ones in the order they'll be done (the one being worked on first), then finished ones, newest first.
+    const finished = (j) => ['done', 'error', 'cancelled'].includes(j.status);
+    const ordered = [...s.jobs.filter((j) => !finished(j)), ...s.jobs.filter(finished).reverse()];
+    parts.push(el('div', { class: 'list' }, ordered.map(jobRow)));
   }
   root.replaceChildren(...parts.filter(Boolean));
 }
@@ -1759,6 +1777,7 @@ function showView(name) {
   if (name === 'card') refreshCard();
   if (name === 'library') refreshLocal();
   if (name === 'starred') renderStarred();
+  if (name === 'history') renderHistory();
 }
 
 function debounce(fn, ms) {
@@ -1803,7 +1822,11 @@ async function init() {
   // (the close event fires after a task delay, so it must not cancel a book that was just opened)
   $('#bookDialog').addEventListener('close', () => { if (!$('#bookDialog').open) state.dialogBook = null; });
   for (const d of document.querySelectorAll('dialog')) {
-    d.addEventListener('click', (e) => { if (e.target === d) d.close(); }); // click backdrop to close
+    // Click the backdrop to close, but not when a press started inside (e.g. selecting text and
+    // letting go outside the window). Dialogs marked data-keep-open close only from their buttons.
+    let downOnBackdrop = false;
+    d.addEventListener('mousedown', (e) => { downOnBackdrop = e.target === d; });
+    d.addEventListener('click', (e) => { if (e.target === d && downOnBackdrop && !('keepOpen' in d.dataset)) d.close(); });
   }
 
   api.catalog.onProgress((p) => {
@@ -1830,8 +1853,10 @@ async function init() {
     state.lib[key] = entry;
     updateStarCount();
     if (state.view === 'library') renderLibrary();
+    refreshBadges(); // e.g. a star taken off after copying
   });
   api.local.onChange(() => refreshLocal());
+  api.history.onChange(() => loadHistory());
 
   state.settings = await api.settings.get();
   state.sourceId = state.settings.source || 'librivox';
@@ -1841,6 +1866,7 @@ async function init() {
   state.show = state.settings.show || 'all';
   $('#show').value = state.show;
   state.lib = await api.library.state();
+  state.history = await api.history.state();
   for (const [key, e] of Object.entries(state.lib)) rememberCover(key, e.image);
   updateStarCount();
   initPlayer();
@@ -1860,6 +1886,7 @@ async function init() {
   renderCardView();
   onDownloadsChanged(await api.downloads.state());
   onDrivesChanged(await api.drives.list());
+  api.whatsNew().then((from) => { if (from !== null) showChanges(from); }).catch(() => {});
   await loadCatalog(state.sourceId);
 }
 

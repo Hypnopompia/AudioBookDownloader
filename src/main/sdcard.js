@@ -37,6 +37,7 @@ const { run, space } = require('./drives');
 
 const META_FILE = '.listensync.json';
 const LEGACY_META_FILE = '.book.json'; // name used before v1.2
+const DRIVE_FILE = '.listensync-drive.json'; // at the top of the drive: its id and the name given in the app
 const REORDER_DIR = '_reorder_in_progress';
 const SYSTEM_NAMES = new Set([
   'system volume information', '$recycle.bin', 'recycler', 'lost.dir', 'android', 'dcim', REORDER_DIR,
@@ -74,12 +75,29 @@ async function readMeta(dir) {
 }
 
 async function writeMeta(dir, meta) {
-  const file = path.join(dir, META_FILE);
+  await writeHiddenJson(path.join(dir, META_FILE), meta);
+}
+
+/** Name and id of the drive itself, kept in a hidden file at its top level. */
+async function readDriveFile(mount) {
+  try {
+    const data = JSON.parse(await fs.readFile(path.join(mount, DRIVE_FILE), 'utf8'));
+    return data && typeof data.id === 'string' ? data : null;
+  } catch {
+    return null;
+  }
+}
+
+async function writeDriveFile(mount, data) {
+  await writeHiddenJson(path.join(mount, DRIVE_FILE), data);
+}
+
+async function writeHiddenJson(file, data) {
   // Overwrite in place (r+ when it exists) so the file keeps its directory slot.
   let fh;
   try {
     fh = await fs.open(file, fsSync.existsSync(file) ? 'r+' : 'w');
-    const buf = Buffer.from(JSON.stringify(meta, null, 2));
+    const buf = Buffer.from(JSON.stringify(data, null, 2));
     await fh.truncate(0);
     await fh.write(buf, 0, buf.length, 0);
     await fh.sync();
@@ -136,6 +154,7 @@ async function listCard(mount) {
     const mp3s = names.filter((n) => isMp3(n) && !isJunk(n));
     const meta = await readMeta(dir);
     if (!mp3s.length && !meta) continue; // not an audio folder
+    const dirStat = await fs.stat(dir).catch(() => null);
     let size = 0;
     for (const n of names) {
       const st = await fs.stat(path.join(dir, n)).catch(() => null);
@@ -148,6 +167,8 @@ async function listCard(mount) {
       identifier: meta?.identifier || null,
       source: meta?.source || null,
       addedAt: meta?.addedAt || null,
+      // when the folder was made, for titles put on the drive without the app's note of the date
+      createdAt: dirStat ? (dirStat.birthtimeMs > 0 ? dirStat.birthtimeMs : dirStat.mtimeMs) : null,
       complete: meta ? meta.complete !== false && (!meta.chapters || meta.chapters === mp3s.length) : true,
       managed: !!meta,
       chapters: mp3s.length,
@@ -453,5 +474,8 @@ module.exports = {
   trackFileName,
   rangeLabel,
   META_FILE,
+  REORDER_DIR,
   readMeta,
+  readDriveFile,
+  writeDriveFile,
 };

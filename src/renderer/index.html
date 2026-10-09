@@ -54,6 +54,10 @@
           <span>Downloads</span>
           <span class="tab-count" id="dlCount"></span>
         </button>
+        <button class="tab" data-view="history">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 3a9 9 0 0 0-9 9H1l4 4 4-4H6a7 7 0 1 1 2.1 5l-1.4 1.4A9 9 0 1 0 13 3zm-1 5v5l4.3 2.5.7-1.2-3.5-2.1V8z"/></svg>
+          <span>History</span>
+        </button>
       </nav>
 
       <div class="sidebar-spacer"></div>
@@ -134,6 +138,13 @@
         </div>
       </section>
 
+      <!-- ============================== History -->
+      <section class="view" id="view-history" hidden>
+        <div class="scroller">
+          <div class="page" id="historyView"></div>
+        </div>
+      </section>
+
       <!-- ============================== Downloads -->
       <section class="view" id="view-downloads" hidden>
         <div class="scroller">
@@ -185,10 +196,13 @@
   <dialog id="confirmDialog" class="dialog dialog-small"></dialog>
   <dialog id="settingsDialog" class="dialog"></dialog>
   <dialog id="aboutDialog" class="dialog dialog-small"></dialog>
+  <dialog id="changesDialog" class="dialog"></dialog>
+  <dialog id="nameDialog" class="dialog dialog-small" data-keep-open></dialog>
   <div id="toasts" class="toasts" aria-live="polite"></div>
 
   <script src="app.js"></script>
   <script src="library.js"></script>
+  <script src="history.js"></script>
   <script src="player.js"></script>
   <script src="shelves.js"></script>
   <script src="podcasts.js"></script>

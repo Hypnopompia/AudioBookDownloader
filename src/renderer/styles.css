@@ -500,7 +500,8 @@ body:has(#player:not([hidden])) .toasts { bottom: 110px; }
 .update-text { font-weight: 600; color: var(--accent-strong); }
 /* keep the sidebar (incl. update notice + Settings) within a normal window height */
 .sidebar { gap: 12px; }
-.tab { padding: 9px 14px; }
+.tabs { gap: 2px; }
+.tab { padding: 8px 14px; }
 
 /* rows: cover and title open the details window */
 .to-details { cursor: pointer; }
@@ -586,3 +587,30 @@ body:has(#player:not([hidden])) .toasts { bottom: 110px; }
 
 /* app icon in the sidebar (the PNG has transparent padding around the tile) */
 .brand-icon { width: 52px; height: 52px; margin: -4px -2px -4px -6px; flex: none; }
+
+/* ---------------------------------------------------------------- history / drive names */
+.badge.copied { background: var(--accent-solid); color: white; }
+.tag.copied { background: var(--accent-soft); color: var(--accent-strong); }
+.text-input {
+  font: inherit; color: var(--text); background: var(--surface); width: 100%; box-sizing: border-box;
+  border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-top: 8px;
+}
+#nameDialog .hint { font-size: 13px; color: var(--muted); margin: 10px 0 0; }
+.history-drive { grid-template-columns: 40px 1fr auto; align-items: start; }
+.history-drive .drive-icon svg { width: 30px; height: 30px; fill: var(--accent); margin-top: 2px; }
+.history-drive .row-actions { flex-wrap: wrap; justify-content: flex-end; }
+.drive-contents { margin-top: 6px; font-size: 14px; }
+.drive-contents summary { cursor: pointer; color: var(--accent); }
+.drive-contents ul { margin: 8px 0 0; padding-left: 18px; line-height: 1.6; }
+.drive-contents .to-details { cursor: pointer; }
+.drive-contents .to-details:hover { text-decoration: underline; }
+.history-head { margin-top: 28px; margin-bottom: 10px; }
+.history-head .section-title { margin: 0; }
+.history-head input[type="search"] { min-width: 240px; }
+.icon-btn { background: none; border: 0; padding: 4px; margin: -4px 0; border-radius: 6px; cursor: pointer; color: var(--muted); display: inline-flex; flex: none; }
+.icon-btn:hover { background: var(--surface); color: var(--accent); }
+.icon-btn svg { width: 15px; height: 15px; fill: currentColor; }
+.drive-name .icon-btn svg { color: inherit; }
+.changes h3 .muted { font: 400 14px var(--sans); }
+.changes ul { margin: 0 0 6px; padding-left: 20px; line-height: 1.55; }
+.changes li + li { margin-top: 4px; }

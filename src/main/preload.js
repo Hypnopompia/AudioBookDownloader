@@ -16,6 +16,8 @@ function on(channel, cb) {
 
 contextBridge.exposeInMainWorld('api', {
   info: () => call('app:info'),
+  changelog: () => call('app:changelog'),
+  whatsNew: () => call('app:whatsNew'),
   settings: {
     get: () => call('settings:get'),
     set: (patch) => call('settings:set', patch),
@@ -35,7 +37,15 @@ contextBridge.exposeInMainWorld('api', {
     pickFolder: () => call('drives:pickFolder'),
     space: (mount) => call('drives:space', mount),
     eject: (mount) => call('drives:eject', mount),
+    name: (mount, name) => call('drives:name', mount, name),
     onChange: (cb) => on('drives:changed', cb),
+  },
+  history: {
+    state: () => call('history:state'),
+    rename: (id, name) => call('history:rename', id, name),
+    clear: () => call('history:clear'),
+    forget: (id) => call('history:forget', id),
+    onChange: (cb) => on('history:changed', cb),
   },
   card: {
     list: (mount) => call('card:list', mount),

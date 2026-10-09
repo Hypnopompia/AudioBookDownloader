@@ -3,13 +3,15 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
-const DEFAULTS = { quality: 'standard', language: 'eng', source: 'librivox', sort: 'popular', show: 'all', speed: '1', splitMinutes: '0', lastMount: '', listSource: 'github' };
+const DEFAULTS = { quality: 'standard', language: 'eng', source: 'librivox', sort: 'popular', show: 'all', speed: '1', splitMinutes: '0', lastMount: '', listSource: 'github', unstarOnCopy: false, lastVersion: '' };
 
 let file = null;
 let data = { ...DEFAULTS };
+let existed = false; // settings were saved before this run (not a new install)
 
 function init(dir) {
   file = path.join(dir, 'settings.json');
+  existed = fs.existsSync(file);
   try {
     data = { ...DEFAULTS, ...JSON.parse(fs.readFileSync(file, 'utf8')) };
   } catch {
@@ -34,4 +36,4 @@ function set(patch) {
   return get();
 }
 
-module.exports = { init, get, set };
+module.exports = { init, get, set, existed: () => existed };

@@ -150,6 +150,12 @@ function openSettings() {
         'Applies to anything put on a drive from now on. Titles saved on this computer keep their original chapters. ' +
         'Chapters only slightly longer than the part length are left whole.'),
 
+      el('h3', {}, 'Stars'),
+      el('label', { class: 'check' },
+        el('input', { type: 'checkbox', checked: !!s.unstarOnCopy, onchange: (e) => save({ unstarOnCopy: e.target.checked }) }),
+        'Remove the star once a title has been put on a drive'),
+      el('p', { class: 'hint' }, 'Handy if you star titles you want to put on a drive later. Podcasts you follow keep their star, and so does a long series when only some of its chapters or episodes are copied.'),
+
       el('h3', {}, 'Sound quality for new downloads'),
       select(s.quality || 'standard', [
         ['standard', 'Standard (recommended): smaller files, great for spoken word'],
@@ -215,6 +221,41 @@ function projectLink() {
 }
 
 /** The About dialog, opened from the app menu on a Mac. */
+/** Compare "1.4.2"-style version numbers. */
+function compareVersions(a, b) {
+  const pa = String(a).split('.').map(Number);
+  const pb = String(b).split('.').map(Number);
+  for (let i = 0; i < 3; i++) if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) - (pb[i] || 0);
+  return 0;
+}
+
+/**
+ * List of changes, newest first. With `from`, only what's new since that
+ * version ("What's new" after an update); '' means the previous version is
+ * unknown, so only this version is shown.
+ */
+async function showChanges(from) {
+  const [info, all] = await Promise.all([api.info(), api.changelog()]).catch(() => [{}, []]);
+  const upTo = all.filter((v) => compareVersions(v.version, info.version) <= 0);
+  const whatsNew = from !== undefined;
+  const list = !whatsNew ? upTo : from ? upTo.filter((v) => compareVersions(v.version, from) > 0) : upTo.slice(0, 1);
+  if (!list.length) return;
+  const dlg = $('#changesDialog');
+  const fmt = (d) => new Date(`${d}T12:00:00`).toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' });
+  dlg.replaceChildren(
+    el('button', { class: 'close-x', 'aria-label': 'Close', onclick: () => dlg.close() }, '×'),
+    el('div', { class: 'dialog-body changes' },
+      el('h2', {}, whatsNew ? 'What’s new' : 'What’s changed'),
+      whatsNew ? el('p', { class: 'muted' }, `ListenSync has been updated to version ${info.version}.`) : null,
+      list.map((v) => [
+        el('h3', {}, `Version ${v.version}`, v.date ? el('span', { class: 'muted' }, ` · ${fmt(v.date)}`) : null),
+        el('ul', {}, v.changes.map((c) => el('li', {}, c))),
+      ])),
+    el('div', { class: 'dialog-foot' }, el('button', { class: 'btn btn-primary', autofocus: true, onclick: () => dlg.close() }, whatsNew ? 'Got it' : 'Close'))
+  );
+  dlg.showModal();
+}
+
 async function showAbout() {
   const dlg = $('#aboutDialog');
   if (dlg.open) return;
@@ -281,6 +322,7 @@ function renderUpdateStatus() {
       el('button', { class: 'link', onclick: () => api.openExternal('https://archive.org') }, 'Internet Archive'),
       ', which hosts them. This app is not affiliated with or endorsed by either. ' +
         'Recordings uploaded by Internet Archive members may be under copyright; you are responsible for making sure your use is allowed where you live.'),
+    el('button', { class: 'link', style: { alignSelf: 'flex-start' }, onclick: () => showChanges() }, 'See what’s changed in each version'),
     el('p', { class: 'hint' }, `Made by ${AUTHOR}. Free and open source (MIT license): `, projectLink()),
   ].filter(Boolean)); // (replaceChildren would print null as text)
 }

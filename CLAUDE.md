@@ -19,9 +19,11 @@ caches or file formats in settings, buttons or messages unless there's no other 
   FAT32 disk image named HEADPHONES
   (`hdiutil create -size 512m -fs "MS-DOS FAT32" -volname HEADPHONES -layout MBRSPUD x.dmg`).
   The app ignores disk images unless started with `SD_LOADER_ALLOW_DISK_IMAGES=1`.
-- Match the existing images: 1600×1010, which is the app at 1280×808 at 1.25× scale, with
-  scrollbars hidden. The app's CSP blocks `<style>` tags, so hide them from script with a
-  constructed stylesheet (`document.adoptedStyleSheets`) and inline styles.
+- Take them at the app's default window size (1440×960, a 1440×928 page on macOS) at 1.25×
+  scale, giving 1800×1160 images, with scrollbars hidden. The older images are 1600×1010
+  (a 1280×808 page); retake them all together so they match. The app's CSP blocks `<style>`
+  tags, so hide them from script with a constructed stylesheet (`document.adoptedStyleSheets`)
+  and inline styles.
 
 ## Testing the app
 
@@ -47,5 +49,11 @@ caches or file formats in settings, buttons or messages unless there's no other 
 
 ## Releasing
 
-Bump the version (`npm version x.y.z --no-git-tag-version`), commit "Version x.y.z" with a short
-list of changes, push, then `npm run release`.
+1. **Add the release notes to `src/changelog.json` first — don't skip this.** Newest first, with
+   the version, its date and a short list of changes in plain words for users (see "Writing for
+   users"). The app shows them as "What's new" after an update and in Settings; a version
+   missing from the file shows nothing new to users. Only versions up to the app's own version
+   are shown, so an entry can be added before the bump. `npm run release` stops if the
+   version or its date is missing.
+2. Bump the version (`npm version x.y.z --no-git-tag-version`).
+3. Commit "Version x.y.z" with a short list of changes, push, then `npm run release`.

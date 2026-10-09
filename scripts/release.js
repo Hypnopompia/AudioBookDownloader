@@ -27,6 +27,13 @@ function releaseState() {
   }
 }
 
+// Users see these notes as "What's new" after updating, so don't release without them.
+const notes = require(path.join(root, 'src', 'changelog.json')).find((v) => v.version === version);
+if (!notes || !notes.changes?.length || !notes.date) {
+  console.error(`Add version ${version} (with its date and a list of changes) to src/changelog.json before releasing.`);
+  process.exit(1);
+}
+
 // Signing and notarizing the Mac app: a Developer ID certificate in the keychain, and an
 // App Store Connect API key from .env (passed to electron-builder, never bundled).
 let dotenv = {};

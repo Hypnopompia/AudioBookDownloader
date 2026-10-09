@@ -64,6 +64,7 @@ async function listMac() {
         fs: info.FilesystemUserVisibleName || fsType,
         isFat32: /fat32/i.test(info.FilesystemUserVisibleName || '') || (fsType === 'msdos' && !/fat1[26]/i.test(info.FilesystemUserVisibleName || '')),
         readOnly: info.WritableVolume === false,
+        serial: info.VolumeUUID || null, // changes only when the drive is formatted
       });
     } catch {
       /* network share, unreadable or vanished: skip */
@@ -83,7 +84,7 @@ Get-Partition | Where-Object { $_.DriveLetter } | ForEach-Object {
   }
 }
 $list = @(Get-CimInstance Win32_LogicalDisk | Where-Object { ($_.DriveType -eq 2 -or $ext.ContainsKey($_.DeviceID)) -and $_.Size } | ForEach-Object {
-  [pscustomobject]@{ id = $_.DeviceID; label = $_.VolumeName; fs = $_.FileSystem }
+  [pscustomobject]@{ id = $_.DeviceID; label = $_.VolumeName; fs = $_.FileSystem; serial = $_.VolumeSerialNumber }
 })
 ConvertTo-Json -InputObject $list -Compress
 `;
@@ -102,12 +103,13 @@ async function listWindows() {
       fs: d.fs,
       isFat32: /^fat32$/i.test(d.fs),
       readOnly: false,
+      serial: d.serial || null,
     }));
 }
 
 // --------------------------------------------------------------------- Linux
 async function listLinux() {
-  const raw = await run('lsblk', ['-J', '-b', '-o', 'NAME,PATH,MOUNTPOINT,RM,HOTPLUG,FSTYPE,LABEL,TRAN,TYPE,RO']);
+  const raw = await run('lsblk', ['-J', '-b', '-o', 'NAME,PATH,MOUNTPOINT,RM,HOTPLUG,FSTYPE,LABEL,TRAN,TYPE,RO,UUID']);
   const data = JSON.parse(raw);
   const truthy = (v) => v === true || v === '1' || v === 1;
   const out = [];
@@ -124,6 +126,7 @@ async function listLinux() {
         fs: node.fstype,
         isFat32: /vfat/i.test(node.fstype),
         readOnly: truthy(node.ro),
+        serial: node.uuid || null,
         device: node.path || '/dev/' + node.name,
         parentDevice: parent ? parent.path || '/dev/' + parent.name : null,
       });

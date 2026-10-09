@@ -1,6 +1,6 @@
 'use strict';
 
-const { app, BrowserWindow, ipcMain, dialog, shell, Notification, Menu, nativeImage, protocol } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, Notification, Menu, nativeImage, protocol, screen } = require('electron');
 const path = require('node:path');
 const os = require('node:os');
 const fs = require('node:fs/promises');
@@ -17,6 +17,7 @@ const media = require('./media');
 const verify = require('./verify');
 const updater = require('./updater');
 const podcasts = require('./podcasts');
+const history = require('./history');
 
 /** Book or podcast details, depending on the id. */
 const getDetails = (identifier, quality) =>
@@ -79,10 +80,16 @@ function migrateMusicFolder() {
 
 let win = null;
 let downloader = null;
+// Version the app was updated from, for "What's new": '' when it's unknown (from before
+// versions were remembered), null when there's nothing to show (new install, same version).
+let whatsNewFrom = null;
 let knownDrives = [];
 const manualMounts = new Map(); // folders picked by hand via "Choose a folder"
 let autoEject = false;
 const touchedMounts = new Set();
+const fixingMounts = new Set(); // play order being fixed: folders move around for a while
+const driveIds = new Map(); // mount -> { key, id } for drives we've recognised
+const askedName = new Set(); // mounts we've already offered to name this session
 
 function send(channel, payload) {
   if (win && !win.isDestroyed()) win.webContents.send(channel, payload);
@@ -96,9 +103,11 @@ function checkMount(mount) {
 }
 
 function createWindow() {
+  // Roomy enough for the sidebar, drive panel and player bar, but never bigger than the screen.
+  const { width: screenW, height: screenH } = screen.getPrimaryDisplay().workAreaSize;
   win = new BrowserWindow({
-    width: 1280,
-    height: 840,
+    width: Math.min(1440, screenW),
+    height: Math.min(960, screenH),
     minWidth: 980,
     minHeight: 640,
     title: APP_NAME,
@@ -150,8 +159,10 @@ async function pollDrives(force = false) {
   polling = true;
   try {
     knownDrives = await drives.listDrives();
+    for (const d of knownDrives) await attachIdentity(d);
+    for (const m of driveIds.keys()) if (!knownDrives.some((d) => d.mount === m) && !manualMounts.has(m)) driveIds.delete(m);
     for (const m of checks.keys()) if (!knownDrives.some((d) => d.mount === m) && !manualMounts.has(m)) checks.delete(m);
-    const key = JSON.stringify(knownDrives.map((d) => [d.mount, d.label, d.total]));
+    const key = JSON.stringify(knownDrives.map((d) => [d.mount, d.label, d.total, d.driveId, d.name]));
     if (force || key !== lastKey) {
       lastKey = key;
       send('drives:changed', knownDrives);
@@ -160,6 +171,51 @@ async function pollDrives(force = false) {
     polling = false;
   }
   return knownDrives;
+}
+
+/**
+ * Recognise a drive from its hidden drive file or serial number (once per
+ * plug-in), and add its id and name. `askName` is set the first time we see
+ * a drive the app has never used, so the window can offer to name it.
+ */
+async function attachIdentity(d) {
+  const key = `${d.serial || ''}|${d.label}|${d.total}`;
+  let known = driveIds.get(d.mount);
+  if (!known || known.key !== key) {
+    const rec = await history.identify(d).catch((err) => {
+      console.error('Could not read the drive name', err);
+      return null;
+    });
+    known = { key, id: rec?.id || null };
+    driveIds.set(d.mount, known);
+  }
+  const rec = known.id ? history.get(known.id) : null;
+  d.driveId = rec?.id || null;
+  d.name = rec?.name || '';
+  d.askName = !rec && !d.manual && !(d.readOnly && !d.serial) && !askedName.has(d.mount);
+  return d;
+}
+
+/** The detected or hand-picked drive at a mount. */
+const driveAt = (mount) => knownDrives.find((d) => d.mount === mount) || manualMounts.get(mount) || null;
+
+/** Make sure a drive has history kept for it (e.g. it was never named); returns its id. */
+async function ensureDrive(mount) {
+  const drive = driveAt(mount);
+  if (!drive) return null;
+  if (drive.driveId) return drive.driveId;
+  const rec = await history.register(drive);
+  driveIds.set(mount, { key: driveIds.get(mount)?.key || '', id: rec.id });
+  await attachIdentity(drive);
+  return rec.id;
+}
+
+/** Bring the history up to date with a drive's contents, unless folders are moving around. */
+function updateHistory(mount, info) {
+  const id = driveAt(mount)?.driveId;
+  if (!id || verifyCtrl || fixingMounts.has(mount) || downloader.pendingBytes(mount) > 0) return;
+  if (fsSync.existsSync(path.join(mount, sdcard.REORDER_DIR))) return; // fixing play order was interrupted
+  if (history.update(id, info.books)) send('history:changed', {});
 }
 
 async function ejectMount(mount) {
@@ -193,6 +249,12 @@ const prefetchLists = () =>
 
 function registerIpc() {
   handle('app:info', () => ({ platform: process.platform, version: app.getVersion() }));
+  handle('app:changelog', () => require('../changelog.json'));
+  handle('app:whatsNew', () => {
+    const from = whatsNewFrom;
+    whatsNewFrom = null; // only once, even if the window reloads
+    return from;
+  });
   handle('settings:get', () => settings.get());
   handle('settings:set', (patch) => settings.set(patch));
   handle('open:external', (url) => openExternal(url));
@@ -229,13 +291,49 @@ function registerIpc() {
     const mount = r.filePaths[0];
     const drive = { id: mount, mount, label: path.basename(mount) || mount, fs: 'Folder', manual: true, isFat32: null, ...(await drives.space(mount)) };
     manualMounts.set(mount, drive);
-    return drive;
+    driveIds.delete(mount);
+    return attachIdentity(drive);
   });
   handle('drives:space', (mount) => drives.space(checkMount(mount)));
   handle('drives:eject', (mount) => ejectMount(checkMount(mount)));
+  /** Name a drive (or skip naming with name null); this only changes the name shown in the app. */
+  handle('drives:name', async (mount, name) => {
+    const drive = driveAt(checkMount(mount));
+    askedName.add(mount);
+    if (drive.driveId) await history.rename(drive.driveId, name ?? drive.name, drive);
+    else {
+      const rec = await history.register(drive, name == null ? undefined : name);
+      driveIds.set(mount, { key: driveIds.get(mount)?.key || '', id: rec.id });
+    }
+    await attachIdentity(drive);
+    await pollDrives(true);
+    send('history:changed', {});
+    return { mount, driveId: drive.driveId, name: drive.name };
+  });
+
+  handle('history:state', () => history.state());
+  handle('history:rename', async (id, name) => {
+    const drive = [...knownDrives, ...manualMounts.values()].find((d) => d.driveId === id);
+    await history.rename(id, name, drive);
+    if (drive) await attachIdentity(drive);
+    await pollDrives(true);
+    send('history:changed', {});
+  });
+  handle('history:clear', () => {
+    history.clear();
+    send('history:changed', {});
+  });
+  handle('history:forget', async (id) => {
+    history.forget(id);
+    for (const [m, v] of driveIds) if (v.id === id) driveIds.delete(m);
+    for (const d of manualMounts.values()) if (d.driveId === id) await attachIdentity(d);
+    await pollDrives(true);
+    send('history:changed', {});
+  });
 
   handle('card:list', async (mount) => {
     const info = await sdcard.listCard(checkMount(mount));
+    updateHistory(mount, info);
     info.pendingBytes = downloader.pendingBytes(mount);
     const results = checks.get(mount);
     for (const b of info.books) b.check = results?.get(b.folder) || null;
@@ -246,6 +344,11 @@ function registerIpc() {
     if (downloader.pendingBytes(mount) > 0) throw new Error('Please wait until copying has finished before removing books.');
     await sdcard.deleteFolder(checkMount(mount), folder);
     forgetCheck(mount, folder);
+    const id = driveAt(mount)?.driveId;
+    if (id) {
+      history.logRemoved(id, folder);
+      send('history:changed', {});
+    }
   });
   handle('card:verify', async (mount, folders) => {
     checkMount(mount);
@@ -272,7 +375,12 @@ function registerIpc() {
   handle('card:deleteFile', (mount, name) => sdcard.deleteLooseFile(checkMount(mount), name));
   handle('card:fixOrder', async (mount) => {
     if (downloader.pendingBytes(mount) > 0) throw new Error('Please wait until copying has finished.');
-    await sdcard.fixPlayOrder(checkMount(mount), (p) => send('card:fixProgress', p));
+    fixingMounts.add(checkMount(mount));
+    try {
+      await sdcard.fixPlayOrder(mount, (p) => send('card:fixProgress', p));
+    } finally {
+      fixingMounts.delete(mount);
+    }
   });
   handle('card:reveal', (mount, folder) => {
     checkMount(mount);
@@ -306,7 +414,7 @@ function registerIpc() {
       return downloader.add(details, { source: details.source || source, toCard: false });
     }
     checkMount(mount);
-    const drive = knownDrives.find((d) => d.mount === mount) || manualMounts.get(mount);
+    const drive = driveAt(mount);
     // Use the saved copy if it has everything asked for (no network needed);
     // otherwise get the list from archive.org and download what's missing.
     const have = new Set((existing?.meta.tracks || []).map((t) => t.number));
@@ -320,7 +428,7 @@ function registerIpc() {
     touchedMounts.add(mount);
     return downloader.add(details, {
       mount,
-      driveLabel: drive?.label || 'Drive',
+      driveLabel: drive?.name || drive?.label || 'Drive',
       source: details.source || existing?.meta.source || source,
       toCard: true,
       splitMinutes: Number(settings.get().splitMinutes) || 0,
@@ -387,7 +495,10 @@ async function onQueueIdle() {
   for (const mount of mounts) {
     try {
       const info = await sdcard.listCard(mount);
-      if (info.needsFix) await sdcard.fixPlayOrder(mount);
+      if (info.needsFix) {
+        fixingMounts.add(mount);
+        await sdcard.fixPlayOrder(mount).finally(() => fixingMounts.delete(mount));
+      }
     } catch (err) {
       console.error('Automatic order fix failed', err);
     }
@@ -457,8 +568,14 @@ app.whenReady().then(() => {
   setupMenu();
   const userData = app.getPath('userData');
   settings.init(userData);
+  const prevVersion = settings.get().lastVersion;
+  if (prevVersion !== app.getVersion()) {
+    whatsNewFrom = prevVersion || (settings.existed() ? '' : null);
+    settings.set({ lastVersion: app.getVersion() });
+  }
   catalog.init(path.join(userData, 'cache'), { getListSource: () => settings.get().listSource });
   libstate.init(userData);
+  history.init(userData);
   local.init(PROFILE ? path.join(PROFILE, 'library') : migrateMusicFolder());
   local.migrateNames().then(() => local.cleanupPartial());
   fs.rm(path.join(os.tmpdir(), 'audiobook-sd-loader'), { recursive: true, force: true }).catch(() => {}); // v1.0 temp folder
@@ -483,7 +600,31 @@ app.whenReady().then(() => {
       const entry = libstate.update(job.identifier, { lastCopied: last, title: job.title, author: job.author, identifier: job.identifier });
       send('library:changed', { key: job.identifier, entry });
     }
-    send('card:changed', { mount: job.mount });
+    // Optionally take the star off once the whole title is on a drive (people use stars as a
+    // "to copy" list). Podcasts are skipped: their star means following the show.
+    if (settings.get().unstarOnCopy && !job.partial && !podcasts.isPodcast(job.identifier) && libstate.all()[job.identifier]?.starred) {
+      const entry = libstate.update(job.identifier, { starred: false });
+      send('library:changed', { key: job.identifier, entry });
+    }
+    ensureDrive(job.mount)
+      .then((id) => {
+        if (!id) return;
+        history.logCopied(id, {
+          folder: job.folder,
+          identifier: job.identifier,
+          title: job.title,
+          author: job.author,
+          source: job.source,
+          kind: job.kind,
+          unit: job.unit,
+          trackNumbers: job.tracks.map((t, i) => t.number || i + 1),
+          trackTotal: job.trackTotal || job.tracks.length,
+          size: job.totalBytes,
+        });
+        send('history:changed', {});
+      })
+      .catch((err) => console.error('Could not add to history', err))
+      .finally(() => send('card:changed', { mount: job.mount })); // after logging, so it isn't also "found" on the drive
   });
   downloader.on('idle', () => onQueueIdle().catch((err) => console.error(err)));
 
@@ -501,7 +642,10 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => app.quit());
-app.on('before-quit', () => libstate.flush());
+app.on('before-quit', () => {
+  libstate.flush();
+  history.flush();
+});
 
 /** Keep only the chosen track numbers (all of them when numbers is null). */
 function selectTracks(details, numbers) {
